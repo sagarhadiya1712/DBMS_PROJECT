@@ -55,6 +55,24 @@ try {
 }
 app.use('/uploads', express.static(uploadDir));
 
+// Determine static client directories (supports both standalone server deploy and monorepo root deploy)
+const possiblePublicDirs = [
+  path.resolve(__dirname, '../public'),
+  path.resolve(__dirname, '../../client/dist'),
+];
+
+let clientDistPath = null;
+for (const dir of possiblePublicDirs) {
+  if (fs.existsSync(dir) && fs.existsSync(path.join(dir, 'index.html'))) {
+    clientDistPath = dir;
+    break;
+  }
+}
+
+if (clientDistPath) {
+  app.use(express.static(clientDistPath));
+}
+
 // System Health Check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -74,8 +92,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root welcome route
-app.get('/', (req, res) => {
+// API Welcome & Directory Route
+app.get('/api', (req, res) => {
   res.json({
     status: 'online',
     service: 'Fleet Rental & Fleet Management System API',
@@ -85,19 +103,48 @@ app.get('/', (req, res) => {
       settings: '/api/settings',
       vehicles: '/api/vehicles',
       branches: '/api/branches',
+      auth: '/api/auth',
     },
   });
 });
 
-// API Routes Mount (mounted on both /api and / to support serverless rewrites)
+// API Routes Mount
 app.use('/api', apiRoutes);
-app.use('/', apiRoutes);
 
-// 404 Not Found Catch-All
+// SPA Frontend Catch-All & 404 Handler
 app.use((req, res, next) => {
+  // Any unmatched /api or /uploads request returns a clean 404 JSON
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+    return res.status(404).json({
+      success: false,
+      message: `API route not found: ${req.method} ${req.originalUrl}`,
+    });
+  }
+
+  // Serve Single Page Application frontend for all web browser routes (/, /vehicles, /login, etc.)
+  if (clientDistPath && fs.existsSync(path.join(clientDistPath, 'index.html'))) {
+    return res.sendFile(path.join(clientDistPath, 'index.html'));
+  }
+
+  // Fallback if client is not built
+  if (req.method === 'GET' && req.path === '/') {
+    return res.json({
+      status: 'online',
+      service: 'Fleet Rental & Fleet Management System API',
+      version: '1.0.0',
+      message: 'Backend API is active. To access frontend, build client or check public directory.',
+      endpoints: {
+        health: '/api/health',
+        settings: '/api/settings',
+        vehicles: '/api/vehicles',
+        branches: '/api/branches',
+      },
+    });
+  }
+
   res.status(404).json({
     success: false,
-    message: `API route not found: ${req.method} ${req.originalUrl}`,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
 
