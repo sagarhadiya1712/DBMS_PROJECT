@@ -43,9 +43,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Ensure upload directory exists and serve static uploads
-const uploadDir = path.resolve(config.UPLOAD_DIR);
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = process.env.VERCEL
+  ? path.join('/tmp', 'uploads')
+  : path.resolve(config.UPLOAD_DIR);
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not create upload directory:', e.message);
 }
 app.use('/uploads', express.static(uploadDir));
 
@@ -59,8 +65,33 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// API Routes Mount
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: config.NODE_ENV,
+  });
+});
+
+// Root welcome route
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    service: 'Fleet Rental & Fleet Management System API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      settings: '/api/settings',
+      vehicles: '/api/vehicles',
+      branches: '/api/branches',
+    },
+  });
+});
+
+// API Routes Mount (mounted on both /api and / to support serverless rewrites)
 app.use('/api', apiRoutes);
+app.use('/', apiRoutes);
 
 // 404 Not Found Catch-All
 app.use((req, res, next) => {
