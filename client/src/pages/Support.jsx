@@ -15,9 +15,11 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 
 export default function Support() {
   const { user } = useAuth();
+  const { settings } = useSettings();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -138,8 +140,11 @@ export default function Support() {
           </div>
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">24/7 Helpline</p>
-            <a href="tel:+917016870683" className="text-sm font-bold text-slate-800 hover:text-indigo-600 transition">
-              +91 70168 70683
+            <a
+              href={`tel:${settings?.contact_phone || '7016870683'}`}
+              className="text-sm font-bold text-slate-800 hover:text-indigo-600 transition"
+            >
+              {settings?.contact_phone_display || settings?.contact_phone || '+91 70168 70683'}
             </a>
           </div>
         </div>
@@ -151,7 +156,7 @@ export default function Support() {
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Headquarters</p>
             <p className="text-xs font-semibold text-slate-800">
-              Swami Bhavan, SVNIT, Surat - 395007
+              {settings?.headquarters_address || 'Swami Bhavan, SVNIT, Surat - 395007'}
             </p>
           </div>
         </div>
@@ -162,8 +167,11 @@ export default function Support() {
           </div>
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Email Concierge</p>
-            <a href="mailto:support@rentfleet.in" className="text-xs font-bold text-slate-800 hover:text-indigo-600 transition">
-              support@rentfleet.in
+            <a
+              href={`mailto:${settings?.contact_email || 'support@rentfleet.in'}`}
+              className="text-xs font-bold text-slate-800 hover:text-indigo-600 transition"
+            >
+              {settings?.contact_email || 'support@rentfleet.in'}
             </a>
           </div>
         </div>

@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   ChevronDown,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -288,6 +289,16 @@ export default function Navbar() {
                             <span>Admin Dashboard</span>
                           </Link>
                         )}
+                        {isAdmin && (
+                          <Link
+                            to="/admin/settings"
+                            onClick={() => setUserDropdownOpen(false)}
+                            className="flex items-center space-x-2 px-4 py-2 text-xs font-medium text-indigo-600 hover:bg-slate-50"
+                          >
+                            <Settings className="w-4 h-4 text-indigo-600" />
+                            <span>System Settings</span>
+                          </Link>
+                        )}
                       </div>
 
                       <div className="border-t border-slate-100 pt-1">
@@ -373,6 +384,15 @@ export default function Navbar() {
               className="block px-3 py-2 rounded-lg text-sm font-medium text-emerald-600 hover:bg-emerald-50"
             >
               Admin Dashboard
+            </Link>
+          )}
+          {isAdmin && (
+            <Link
+              to="/admin/settings"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+            >
+              System Settings
             </Link>
           )}
           <Link

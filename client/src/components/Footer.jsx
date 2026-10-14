@@ -1,8 +1,26 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Car, ShieldCheck, Clock, Headphones, Award, Heart } from 'lucide-react';
+import { Car, ShieldCheck, Clock, Headphones, Award } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
 
 export default function Footer() {
+  const { settings, branches } = useSettings();
+
+  const phoneDisplay = settings.contact_phone_display || settings.contact_phone || '+91 70168 70683';
+  const phoneRaw = settings.contact_phone || '7016870683';
+  const email = settings.contact_email || 'support@rentfleet.in';
+  const hqAddress = settings.headquarters_address || 'Swami Bhavan, SVNIT, Surat, Gujarat - 395007';
+  const helpline = settings.roadside_helpline || phoneDisplay;
+  const categories = Array.isArray(settings.fleet_categories)
+    ? settings.fleet_categories
+    : [
+        { id: 'HATCHBACK', name: 'Hatchbacks', models: 'Swift, Tiago, Alto' },
+        { id: 'SEDAN', name: 'Executive Sedans', models: 'Dzire, Amaze' },
+        { id: 'SUV', name: 'SUVs & 4x4', models: 'Nexon, Thar, Scorpio-N' },
+        { id: 'MUV', name: 'MUV / Family', models: 'Innova Crysta, Ertiga' },
+        { id: 'LUXURY_TAXI', name: '⭐ Luxury Taxi', models: 'Mercedes E-Class' },
+      ];
+
   return (
     <footer className="bg-slate-900 text-slate-300 border-t border-slate-800">
       {/* Value props strip */}
@@ -35,7 +53,7 @@ export default function Footer() {
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-white">Inspected & Sanitized</h4>
-                <p className="text-xs text-slate-400">Continuous fleet maintenance audits</p>
+                <p className="text-xs text-slate-400">Continuous fleet audits in database</p>
               </div>
             </div>
 
@@ -45,7 +63,7 @@ export default function Footer() {
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-white">24/7 Roadside Assistance</h4>
-                <p className="text-xs text-slate-400">Direct concierge: +91 70168 70683</p>
+                <p className="text-xs text-slate-400">Direct concierge: {helpline}</p>
               </div>
             </div>
           </div>
@@ -61,22 +79,22 @@ export default function Footer() {
                 <Car className="w-5 h-5" />
               </div>
               <span className="font-extrabold text-xl tracking-tight text-white">
-                Fleet<span className="text-indigo-400">Rentals</span>
+                {settings.company_name || 'Fleet'}<span className="text-indigo-400">Rentals</span>
               </span>
             </Link>
             <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-              Enterprise vehicle rental & fleet management system. Automating the full rental lifecycle from booking, payments, condition checklist inspections, to transparent digital invoices.
+              {settings.company_tagline}
             </p>
             <div className="text-xs text-slate-400 space-y-1">
-              <p>📍 Headquarters: Swami Bhavan, SVNIT, Surat, Gujarat - 395007</p>
+              <p>📍 Headquarters: {hqAddress}</p>
               <p>
                 📞 Phone:{' '}
-                <a href="tel:+917016870683" className="hover:text-indigo-400 transition font-medium">
-                  +91 70168 70683
+                <a href={`tel:${phoneRaw}`} className="hover:text-indigo-400 transition font-medium">
+                  {phoneDisplay}
                 </a>{' '}
                 | ✉️{' '}
-                <a href="mailto:support@rentfleet.in" className="hover:text-indigo-400 transition font-medium">
-                  support@rentfleet.in
+                <a href={`mailto:${email}`} className="hover:text-indigo-400 transition font-medium">
+                  {email}
                 </a>
               </p>
             </div>
@@ -85,21 +103,40 @@ export default function Footer() {
           <div>
             <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Fleet Categories</h4>
             <ul className="space-y-2 text-xs">
-              <li><Link to="/vehicles?category=HATCHBACK" className="hover:text-white transition">Hatchbacks (Swift, Tiago, Alto)</Link></li>
-              <li><Link to="/vehicles?category=SEDAN" className="hover:text-white transition">Executive Sedans (Dzire, Amaze)</Link></li>
-              <li><Link to="/vehicles?category=SUV" className="hover:text-white transition">SUVs & 4x4 (Nexon, Thar, Scorpio-N)</Link></li>
-              <li><Link to="/vehicles?category=MUV" className="hover:text-white transition">MUV / Family (Innova Crysta, Ertiga)</Link></li>
-              <li><Link to="/vehicles?category=LUXURY_TAXI" className="hover:text-amber-400 transition font-semibold">⭐ Luxury Taxi (Mercedes E-Class)</Link></li>
+              {categories.map((cat) => (
+                <li key={cat.id}>
+                  <Link
+                    to={`/vehicles?category=${cat.id}`}
+                    className={`hover:text-white transition ${
+                      cat.id === 'LUXURY_TAXI' ? 'text-amber-400 font-semibold' : ''
+                    }`}
+                  >
+                    {cat.name} {cat.models ? `(${cat.models})` : ''}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
           <div>
             <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Operational Hubs</h4>
             <ul className="space-y-2 text-xs">
-              <li><span className="text-slate-400">Surat Ring Road Hub (SVNIT Surat)</span></li>
-              <li><span className="text-slate-400">Ahmedabad Airport Terminal (AMD)</span></li>
-              <li><span className="text-slate-400">Mumbai BKC Executive Station (BOM)</span></li>
-              <li><span className="text-slate-400">Pune Hinjewadi Tech Hub (PNQ)</span></li>
+              {branches && branches.length > 0 ? (
+                branches.map((b) => (
+                  <li key={b.id}>
+                    <span className="text-slate-400">
+                      {b.name} ({b.city})
+                    </span>
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li><span className="text-slate-400">Surat Ring Road Hub (Surat)</span></li>
+                  <li><span className="text-slate-400">Ahmedabad Airport Terminal (Ahmedabad)</span></li>
+                  <li><span className="text-slate-400">Mumbai BKC Executive Station (Mumbai)</span></li>
+                  <li><span className="text-slate-400">Pune Hinjewadi Tech Hub (Pune)</span></li>
+                </>
+              )}
             </ul>
           </div>
 
@@ -115,7 +152,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-slate-800 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400">
-          <p>© {new Date().getFullYear()} FleetRentals System Inc. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {settings.copyright_text || 'FleetRentals System Inc. All rights reserved.'}</p>
           <p className="flex items-center space-x-1 mt-2 sm:mt-0">
             <span>Built with precision for modern fleet logistics</span>
           </p>

@@ -761,6 +761,103 @@ async function main() {
     ],
   });
 
+  // 10. System & Company Settings (stored in database)
+  const defaultSettings = [
+    {
+      key: 'company_name',
+      value: 'FleetRentals',
+      description: 'System brand name',
+      category: 'COMPANY',
+    },
+    {
+      key: 'company_tagline',
+      value: 'Enterprise vehicle rental & fleet management system. Automating the full rental lifecycle from booking, payments, condition checklist inspections, to transparent digital invoices.',
+      description: 'Official company tagline and description',
+      category: 'COMPANY',
+    },
+    {
+      key: 'headquarters_address',
+      value: 'Swami Bhavan, SVNIT, Surat, Gujarat - 395007',
+      description: 'Physical headquarters address',
+      category: 'CONTACT',
+    },
+    {
+      key: 'headquarters_city',
+      value: 'Surat',
+      description: 'Headquarters primary city',
+      category: 'CONTACT',
+    },
+    {
+      key: 'headquarters_pincode',
+      value: '395007',
+      description: 'Postal/PIN code of headquarters',
+      category: 'CONTACT',
+    },
+    {
+      key: 'contact_phone',
+      value: '7016870683',
+      description: 'Primary customer phone number',
+      category: 'CONTACT',
+    },
+    {
+      key: 'contact_phone_display',
+      value: '+91 70168 70683',
+      description: 'Formatted phone number for UI display',
+      category: 'CONTACT',
+    },
+    {
+      key: 'contact_email',
+      value: 'support@rentfleet.in',
+      description: 'Official customer support email',
+      category: 'CONTACT',
+    },
+    {
+      key: 'roadside_helpline',
+      value: '+91 70168 70683',
+      description: '24/7 emergency roadside helpline',
+      category: 'CONTACT',
+    },
+    {
+      key: 'gstin',
+      value: '24AAACF1234F1Z5',
+      description: 'Goods and Services Tax Identification Number',
+      category: 'LEGAL',
+    },
+    {
+      key: 'copyright_text',
+      value: 'FleetRentals System Inc. All rights reserved.',
+      description: 'Footer copyright label',
+      category: 'LEGAL',
+    },
+    {
+      key: 'support_hours',
+      value: '24/7 Dedicated Support Helpline',
+      description: 'Customer service operating hours',
+      category: 'SUPPORT',
+    },
+    {
+      key: 'fleet_categories',
+      value: JSON.stringify([
+        { id: 'HATCHBACK', name: 'Hatchbacks', models: 'Swift, Tiago, Alto K10' },
+        { id: 'SEDAN', name: 'Executive Sedans', models: 'Dzire, Amaze, Tigor' },
+        { id: 'SUV', name: 'SUVs & 4x4', models: 'Nexon, Thar, Scorpio-N, XUV700' },
+        { id: 'MUV', name: 'MUV / Family', models: 'Innova Crysta, Ertiga' },
+        { id: 'LUXURY_TAXI', name: '⭐ Luxury Taxi', models: 'Mercedes-Benz E-Class' },
+      ]),
+      description: 'Primary fleet categories shown across navigation and footer',
+      category: 'FLEET',
+    },
+  ];
+
+  for (const s of defaultSettings) {
+    await prisma.systemSetting.upsert({
+      where: { key: s.key },
+      update: { value: s.value, description: s.description, category: s.category },
+      create: s,
+    });
+  }
+  console.log('✅ System & company settings seeded in database');
+
   console.log('🎉 Indian Fleet & Database Seeding Completed Successfully!');
 }
 

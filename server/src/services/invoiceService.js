@@ -43,6 +43,18 @@ const generateInvoicePDF = async (bookingId, res) => {
     throw new Error('Booking not found');
   }
 
+  // Load dynamic company and contact settings from database
+  const settingsList = await prisma.systemSetting.findMany();
+  const settings = {};
+  for (const s of settingsList) {
+    settings[s.key] = s.value;
+  }
+  const hqAddress = settings.headquarters_address || 'Swami Bhavan, SVNIT, Surat - 395007';
+  const phone = settings.contact_phone_display || settings.contact_phone || '+91 70168 70683';
+  const email = settings.contact_email || 'support@rentfleet.in';
+  const brandName = settings.company_name ? `${settings.company_name.toUpperCase()} INDIA` : 'FLEETRENTALS INDIA';
+  const tagline = settings.company_tagline || 'Vehicle Rental & Fleet Management System';
+
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
   // Stream PDF directly to client response
@@ -55,9 +67,9 @@ const generateInvoicePDF = async (bookingId, res) => {
   doc.pipe(res);
 
   // Brand Header
-  doc.fillColor('#1E293B').fontSize(24).font('Helvetica-Bold').text('FLEETRENTALS INDIA', 40, 40);
-  doc.fontSize(10).font('Helvetica').fillColor('#64748B').text('Vehicle Rental & Fleet Management System', 40, 68);
-  doc.text('HQ: Swami Bhavan, SVNIT, Surat - 395007 | Phone: +91 70168 70683 | support@rentfleet.in', 40, 82);
+  doc.fillColor('#1E293B').fontSize(24).font('Helvetica-Bold').text(brandName, 40, 40);
+  doc.fontSize(10).font('Helvetica').fillColor('#64748B').text(tagline.slice(0, 75), 40, 68);
+  doc.text(`HQ: ${hqAddress} | Phone: ${phone} | ${email}`, 40, 82);
 
   // Invoice Title & Meta
   doc.fillColor('#0F172A').fontSize(18).font('Helvetica-Bold').text('TAX INVOICE', 380, 40, { align: 'right' });
@@ -175,7 +187,7 @@ const generateInvoicePDF = async (bookingId, res) => {
 
   // Footer notes
   doc.fontSize(9).font('Helvetica').fillColor('#94A3B8').text(
-    'Thank you for renting with FleetRentals India. For claims or billing questions, contact +91 70168 70683 or support@rentfleet.in.',
+    `Thank you for renting with ${settings.company_name || 'FleetRentals'} India. For claims or billing questions, contact ${phone} or ${email}.`,
     40,
     740,
     { align: 'center', width: 515 }

@@ -14,6 +14,7 @@ const pricingRuleRoutes = require('./pricingRuleRoutes');
 const adminRoutes = require('./adminRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const supportTicketRoutes = require('./supportTicketRoutes');
+const settingRoutes = require('./settingRoutes');
 
 router.use('/auth', authRoutes);
 router.use('/vehicles', vehicleRoutes);
@@ -28,5 +29,6 @@ router.use('/pricing', pricingRuleRoutes);
 router.use('/admin', adminRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/support', supportTicketRoutes);
+router.use('/settings', settingRoutes);
 
 module.exports = router;

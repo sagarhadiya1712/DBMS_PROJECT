@@ -186,8 +186,14 @@ export default function Home() {
             <div className="text-xs font-semibold text-slate-600 mt-1">Zero Overlap Guarantee</div>
           </div>
           <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-emerald-600 font-display">4</div>
-            <div className="text-xs font-semibold text-slate-600 mt-1">Surat • Ahmedabad • Mumbai • Pune</div>
+            <div className="text-3xl sm:text-4xl font-extrabold text-emerald-600 font-display">
+              {branches.length || 4}
+            </div>
+            <div className="text-xs font-semibold text-slate-600 mt-1">
+              {branches.length > 0
+                ? [...new Set(branches.map((b) => b.city))].join(' • ')
+                : 'Surat • Ahmedabad • Mumbai • Pune'}
+            </div>
           </div>
           <div>
             <div className="text-3xl sm:text-4xl font-extrabold text-amber-500 font-display">₹1,200/d</div>

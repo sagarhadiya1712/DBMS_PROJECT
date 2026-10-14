@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { SettingsProvider } from './context/SettingsContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -28,13 +29,15 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import UserManagement from './pages/admin/UserManagement';
 import PricingRulesPage from './pages/admin/PricingRulesPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
+import SystemSettingsPage from './pages/admin/SystemSettingsPage';
 
 export default function App() {
   return (
     <Router>
       <AuthProvider>
         <NotificationProvider>
-          <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+          <SettingsProvider>
+            <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
             <Navbar />
             <main className="flex-1">
               <Routes>
@@ -139,6 +142,14 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/admin/settings"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                      <SystemSettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* Catch-all redirect */}
                 <Route path="*" element={<Navigate to="/" replace />} />
@@ -146,8 +157,9 @@ export default function App() {
             </main>
             <Footer />
           </div>
-        </NotificationProvider>
-      </AuthProvider>
+        </SettingsProvider>
+      </NotificationProvider>
+    </AuthProvider>
     </Router>
   );
 }
