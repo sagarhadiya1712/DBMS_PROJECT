@@ -14,5 +14,10 @@
     "build": "npm --prefix server run build && npm --prefix client run build",
     "seed": "npm --prefix server run db:seed",
     "test": "npm --prefix server test"
-  }
+  },
+  "trustedDependencies": [
+    "@prisma/client",
+    "prisma",
+    "@prisma/engines"
+  ]
 }
