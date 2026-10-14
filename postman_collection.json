@@ -1,0 +1,199 @@
+{
+  "info": {
+    "name": "Vehicle Rental & Fleet Management System API",
+    "description": "Complete REST API collection for FleetRentals monorepo including Auth, Vehicles, Bookings, Payments, Inspections, Maintenance, Admin Dashboard, and Invoices.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alex@example.com\",\n  \"password\": \"Password123!\",\n  \"firstName\": \"Alex\",\n  \"lastName\": \"Rivera\",\n  \"phone\": \"+1-555-8833\"\n}"
+            },
+            "url": "http://localhost:5000/api/auth/register"
+          }
+        },
+        {
+          "name": "Login (Admin / Staff / Customer)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@rentfleet.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "http://localhost:5000/api/auth/login"
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "http://localhost:5000/api/auth/profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vehicles & Catalog",
+      "item": [
+        {
+          "name": "Search Available Vehicles",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:5000/api/vehicles?category=EV&status=AVAILABLE"
+          }
+        },
+        {
+          "name": "Get Vehicle Details by ID",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:5000/api/vehicles/{{vehicleId}}"
+          }
+        },
+        {
+          "name": "Add Vehicle (Admin/Manager)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vin\": \"1HGCR2F83HA999999\",\n  \"licensePlate\": \"NYC-9999\",\n  \"make\": \"Rivian\",\n  \"model\": \"R1S Adventure\",\n  \"year\": 2024,\n  \"category\": \"EV\",\n  \"transmission\": \"Automatic\",\n  \"fuelType\": \"Electric\",\n  \"seatingCapacity\": 7,\n  \"mileage\": 2500,\n  \"dailyRate\": 145,\n  \"hourlyRate\": 22,\n  \"branchId\": \"{{branchId}}\"\n}"
+            },
+            "url": "http://localhost:5000/api/vehicles"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings & Payments",
+      "item": [
+        {
+          "name": "Get Price Quote",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"startDateTime\": \"2026-11-01T10:00:00Z\",\n  \"endDateTime\": \"2026-11-04T10:00:00Z\",\n  \"promoCode\": \"WELCOME10\"\n}"
+            },
+            "url": "http://localhost:5000/api/bookings/quote"
+          }
+        },
+        {
+          "name": "Create Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"pickupBranchId\": \"{{branchId}}\",\n  \"dropBranchId\": \"{{branchId}}\",\n  \"startDateTime\": \"2026-11-01T10:00:00Z\",\n  \"endDateTime\": \"2026-11-04T10:00:00Z\",\n  \"promoCode\": \"WELCOME10\"\n}"
+            },
+            "url": "http://localhost:5000/api/bookings"
+          }
+        },
+        {
+          "name": "Verify Razorpay Test Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"orderId\": \"order_test_123\",\n  \"paymentId\": \"pay_test_456\",\n  \"signature\": \"valid_test_signature\",\n  \"method\": \"card\"\n}"
+            },
+            "url": "http://localhost:5000/api/payments/verify"
+          }
+        },
+        {
+          "name": "Download Tax Invoice PDF",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "http://localhost:5000/api/invoices/{{bookingId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff Operations",
+      "item": [
+        {
+          "name": "Check-Out / Pickup Inspection",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{staff_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"type\": \"PICKUP\",\n  \"odometerReading\": 12500,\n  \"fuelLevel\": 100,\n  \"checklist\": { \"tires\": true, \"exterior\": true, \"interior\": true, \"documents\": true }\n}"
+            },
+            "url": "http://localhost:5000/api/inspections"
+          }
+        },
+        {
+          "name": "Return Inspection & Discrepancy Billing",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{staff_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"type\": \"RETURN\",\n  \"odometerReading\": 12900,\n  \"fuelLevel\": 95,\n  \"checklist\": { \"tires\": true, \"exterior\": true, \"interior\": true, \"documents\": true },\n  \"damageCharge\": 0\n}"
+            },
+            "url": "http://localhost:5000/api/inspections"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Intelligence",
+      "item": [
+        {
+          "name": "Dashboard KPI Metrics",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "http://localhost:5000/api/admin/dashboard"
+          }
+        },
+        {
+          "name": "Export Financial Report (Excel)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "http://localhost:5000/api/admin/reports?format=excel"
+          }
+        },
+        {
+          "name": "Export Financial Report (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "http://localhost:5000/api/admin/reports?format=pdf"
+          }
+        }
+      ]
+    }
+  ]
+}

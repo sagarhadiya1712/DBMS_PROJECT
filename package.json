@@ -1,0 +1,14 @@
+{
+  "name": "vehicle-rental-system",
+  "version": "1.0.0",
+  "description": "Vehicle Rental & Fleet Management System Monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "node start-dev.js",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "seed": "npm --prefix server run db:seed",
+    "test": "npm --prefix server test"
+  }
+}
