@@ -24,8 +24,14 @@ import {
   TrendingUp,
   X,
   Banknote,
-  CreditCard
+  CreditCard,
+  CheckSquare,
+  Building2,
+  ShieldCheck
 } from 'lucide-react';
+import KYCTab from './KYCTab';
+import VehicleApprovalsTab from './VehicleApprovalsTab';
+import OwnersPayoutsTab from './OwnersPayoutsTab';
 import {
   LineChart,
   Line,
@@ -40,6 +46,7 @@ import {
 } from 'recharts';
 import api, { API_BASE_URL } from '../../services/api';
 import { useNotifications } from '../../context/NotificationContext';
+import { useRealtime } from '../../context/RealtimeContext';
 
 export default function AdminPortal() {
   const { showToast } = useNotifications();
@@ -245,6 +252,71 @@ export default function AdminPortal() {
     }
   };
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString());
+
+  // Function to refresh the currently active section
+  const refreshActiveSection = async () => {
+    try {
+      switch (activeSection) {
+        case 'dashboard':
+          await loadDashboardData();
+          break;
+        case 'vehicles':
+          await loadVehicles();
+          break;
+        case 'bookings':
+          await loadBookings();
+          break;
+        case 'customers':
+          await loadCustomers();
+          break;
+        case 'drivers':
+          await loadDrivers();
+          break;
+        case 'maintenance':
+          await loadMaintenanceAndFuel();
+          break;
+        case 'documents':
+          await loadDocuments();
+          break;
+        case 'discounts':
+          await loadDiscounts();
+          break;
+        case 'reports':
+          await loadReports();
+          break;
+        default:
+          await loadDashboardData();
+      }
+      setLastSyncTime(new Date().toLocaleTimeString());
+    } catch (e) {
+      console.warn('Section refresh warning:', e);
+    }
+  };
+
+  // Master refresh for entire database & dashboard
+  const refreshAllData = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.allSettled([
+        loadDashboardData(),
+        loadVehicles(),
+        loadBookings(),
+        loadCustomers(),
+        loadDrivers(),
+        loadMaintenanceAndFuel(),
+        loadDocuments(),
+        loadDiscounts(),
+        loadReports(),
+      ]);
+      setLastSyncTime(new Date().toLocaleTimeString());
+      showToast('All fleet data synchronized live from database!', 'success');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     loadDashboardData();
@@ -257,6 +329,47 @@ export default function AdminPortal() {
     loadDiscounts();
     loadReports();
   }, []);
+
+  // Immediate refresh whenever user switches active section
+  useEffect(() => {
+    refreshActiveSection();
+  }, [activeSection]);
+
+  // Real-time Database Synchronization across all tables
+  useRealtime('*', (changedTables) => {
+    const tableSet = new Set(changedTables);
+    const has = (t) => tableSet.has('*') || tableSet.has(t);
+
+    if (has('vehicles') || has('vehicle_images')) {
+      loadVehicles();
+      loadDashboardData();
+    }
+    if (has('bookings') || has('payments')) {
+      loadBookings();
+      loadDashboardData();
+    }
+    if (has('users') || has('kyc_documents')) {
+      loadCustomers();
+    }
+    if (has('maintenance') || has('fuel_records')) {
+      loadMaintenanceAndFuel();
+      loadDashboardData();
+    }
+    if (has('vehicle_documents')) {
+      loadDocuments();
+      loadDashboardData();
+    }
+    if (has('discounts')) {
+      loadDiscounts();
+    }
+    if (has('drivers')) {
+      loadDrivers();
+    }
+
+    // Always ensure currently visible section reflects newest data immediately
+    refreshActiveSection();
+    setLastSyncTime(new Date().toLocaleTimeString());
+  });
 
   // Reload revenue chart when toggle daily/monthly changes
   useEffect(() => {
@@ -524,6 +637,9 @@ export default function AdminPortal() {
   // Navigation Items
   const navItems = [
     { id: 'dashboard', label: 'Dashboard & KPIs', icon: LayoutDashboard },
+    { id: 'kyc', label: 'KYC Verification', icon: ShieldCheck, count: stats?.pending_kyc || 0, alert: (stats?.pending_kyc || 0) > 0 },
+    { id: 'approvals', label: 'Vehicle Approvals', icon: CheckSquare, count: stats?.pending_vehicle_approvals || 0, alert: (stats?.pending_vehicle_approvals || 0) > 0 },
+    { id: 'owners', label: 'Owners & Payouts', icon: Building2, count: stats?.pending_payouts || 0, alert: (stats?.pending_payouts || 0) > 0 },
     { id: 'vehicles', label: 'Fleet Vehicles', icon: Car, count: vehicles.length },
     { id: 'bookings', label: 'Reservations', icon: CalendarCheck, count: bookings.length },
     { id: 'customers', label: 'Customers', icon: Users, count: customers.length },
@@ -579,6 +695,27 @@ export default function AdminPortal() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-6 sm:p-10 overflow-y-auto space-y-8">
+        {/* Global Live Data Sync Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/90 border border-slate-800/90 shadow-md">
+          <div className="flex items-center space-x-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-xs font-bold text-slate-200">Live Database Sync</span>
+            <span className="text-[11px] text-emerald-400 font-mono font-semibold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">8s Auto-Refresh</span>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">• Synced at: {lastSyncTime}</span>
+          </div>
+          <button
+            onClick={refreshAllData}
+            disabled={isRefreshing}
+            className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-all disabled:opacity-50"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? 'Syncing...' : 'Sync Live Data'}</span>
+          </button>
+        </div>
+
         {/* ================= SECTION 1: DASHBOARD ================= */}
         {activeSection === 'dashboard' && (
           <div className="space-y-8 animate-fade-in">
@@ -597,7 +734,7 @@ export default function AdminPortal() {
             </div>
 
             {/* Stat Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Fleet</span>
                 <span className="text-2xl font-black text-white mt-1 block">{stats?.total_vehicles || 0}</span>
@@ -611,10 +748,6 @@ export default function AdminPortal() {
                 <span className="text-2xl font-black text-amber-400 mt-1 block">{stats?.rented_vehicles || 0}</span>
               </div>
               <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
-                <span className="text-[10px] uppercase font-bold text-rose-400 block">In Service</span>
-                <span className="text-2xl font-black text-rose-400 mt-1 block">{stats?.in_service_vehicles || 0}</span>
-              </div>
-              <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
                 <span className="text-[10px] uppercase font-bold text-indigo-400 block">Today's Bookings</span>
                 <span className="text-2xl font-black text-indigo-400 mt-1 block">{stats?.todays_bookings || 0}</span>
               </div>
@@ -622,10 +755,48 @@ export default function AdminPortal() {
                 <span className="text-[10px] uppercase font-bold text-violet-400 block">Total Revenue</span>
                 <span className="text-xl font-black text-violet-400 mt-1 block">Rs. {Number(stats?.total_revenue || 0).toLocaleString('en-IN')}</span>
               </div>
-              <div className="glass-card p-4 rounded-2xl border border-amber-500/40 bg-amber-950/20">
+
+              {/* Actionable Pipeline Cards */}
+              <button
+                onClick={() => setActiveSection('kyc')}
+                className="text-left glass-card p-4 rounded-2xl border border-indigo-500/40 bg-indigo-950/20 hover:border-indigo-400 transition cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-indigo-300 block">Pending KYC</span>
+                  {(stats?.pending_kyc || 0) > 0 && <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />}
+                </div>
+                <span className="text-2xl font-black text-indigo-300 mt-1 block">{stats?.pending_kyc || 0}</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Identity verification requests</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('approvals')}
+                className="text-left glass-card p-4 rounded-2xl border border-violet-500/40 bg-violet-950/20 hover:border-violet-400 transition cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-violet-300 block">Vehicle Approvals</span>
+                  {(stats?.pending_vehicle_approvals || 0) > 0 && <span className="w-2 h-2 rounded-full bg-violet-400 animate-ping" />}
+                </div>
+                <span className="text-2xl font-black text-violet-300 mt-1 block">{stats?.pending_vehicle_approvals || 0}</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Owner listings awaiting review</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('owners')}
+                className="text-left glass-card p-4 rounded-2xl border border-emerald-500/40 bg-emerald-950/20 hover:border-emerald-400 transition cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-emerald-300 block">Pending Payouts</span>
+                  {(stats?.pending_payouts || 0) > 0 && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />}
+                </div>
+                <span className="text-2xl font-black text-emerald-300 mt-1 block">{stats?.pending_payouts || 0}</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Owner settlements pending</span>
+              </button>
+
+              <div className="glass-card p-4 rounded-2xl border border-amber-500/40 bg-amber-950/20 col-span-2">
                 <span className="text-[10px] uppercase font-bold text-amber-400 block">Pending COD Collection</span>
                 <span className="text-xl font-black text-amber-400 mt-1 block">Rs. {Number(stats?.pending_cod_collection || 0).toLocaleString('en-IN')}</span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">{stats?.pending_cod_count || 0} pending orders</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">{stats?.pending_cod_count || 0} pending orders awaiting cash pickup</span>
               </div>
             </div>
 
@@ -1535,6 +1706,15 @@ export default function AdminPortal() {
             </div>
           </div>
         )}
+
+        {/* ================= SECTION: KYC VERIFICATION ================= */}
+        {activeSection === 'kyc' && <KYCTab />}
+
+        {/* ================= SECTION: VEHICLE APPROVALS ================= */}
+        {activeSection === 'approvals' && <VehicleApprovalsTab />}
+
+        {/* ================= SECTION: OWNERS & PAYOUTS ================= */}
+        {activeSection === 'owners' && <OwnersPayoutsTab />}
 
         {/* ================= MODAL: ADD / EDIT VEHICLE ================= */}
         {vehicleModalOpen && (

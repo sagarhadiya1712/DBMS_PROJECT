@@ -12,7 +12,7 @@ function authenticateToken(req, res, next) {
   try {
     const decoded = verifyToken(token);
     const user = db.prepare(`
-      SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, created_at
+      SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, kyc_status, created_at
       FROM users WHERE user_id = ?
     `).get(decoded.user_id);
 
@@ -39,7 +39,7 @@ function optionalAuth(req, res, next) {
     try {
       const decoded = verifyToken(token);
       const user = db.prepare(`
-        SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, created_at
+        SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, kyc_status, created_at
         FROM users WHERE user_id = ?
       `).get(decoded.user_id);
 
@@ -53,13 +53,14 @@ function optionalAuth(req, res, next) {
   next();
 }
 
-function requireRole(role) {
+function requireRole(roleOrRoles) {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required.' });
     }
-    if (req.user.role !== role) {
-      return res.status(403).json({ error: `Access forbidden. Requires ${role} privileges.` });
+    const allowed = Array.isArray(roleOrRoles) ? roleOrRoles : [roleOrRoles];
+    if (!allowed.includes(req.user.role)) {
+      return res.status(403).json({ error: `Access forbidden. Requires ${allowed.join(' or ')} privileges.` });
     }
     next();
   };
@@ -67,7 +68,9 @@ function requireRole(role) {
 
 module.exports = {
   authenticateToken,
+  authMiddleware: authenticateToken,
   optionalAuth,
   requireRole,
+  roleMiddleware: requireRole,
   requireAdmin: requireRole('admin')
 };

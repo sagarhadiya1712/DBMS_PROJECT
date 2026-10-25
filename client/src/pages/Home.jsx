@@ -17,6 +17,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import api from '../services/api';
+import { useRealtime } from '../context/RealtimeContext';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -29,24 +30,31 @@ export default function Home() {
   const [startDateTime, setStartDateTime] = useState('');
   const [endDateTime, setEndDateTime] = useState('');
 
-  useEffect(() => {
-    const fetchFleet = async () => {
-      try {
-        const res = await api.get('/vehicles');
-        const list = res.data || [];
-        setFeaturedVehicles(list.slice(0, 6));
+  const fetchFleet = React.useCallback(async (isSilent = false) => {
+    try {
+      if (!isSilent) setLoading(true);
+      const res = await api.get('/vehicles');
+      const list = res.data || [];
+      setFeaturedVehicles(list.slice(0, 6));
 
-        // Find luxury vehicle (Innova Hycross)
-        const lux = list.find((v) => v.category === 'Luxury' || v.is_chauffeur_driven === 1);
-        setLuxuryVehicle(lux || list[0]);
-      } catch (err) {
-        console.error('Failed to load featured vehicles:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchFleet();
+      // Find luxury vehicle (Innova Hycross)
+      const lux = list.find((v) => v.category === 'Luxury' || v.is_chauffeur_driven === 1);
+      setLuxuryVehicle(lux || list[0]);
+    } catch (err) {
+      console.error('Failed to load featured vehicles:', err);
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchFleet(false);
+  }, [fetchFleet]);
+
+  // Real-time synchronization for landing page featured fleet
+  useRealtime(['vehicles', 'vehicle_images', 'discounts'], () => {
+    fetchFleet(true);
+  });
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -387,6 +395,90 @@ export default function Home() {
             <p className="text-xs text-slate-400 leading-relaxed">
               Pick up your inspected car. When completed, download itemized tax invoice PDFs generated live with PDFKit.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. LIST YOUR CAR AND EARN (PARTNER FLEET PROGRAM) */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="relative overflow-hidden rounded-3xl border border-emerald-500/30 bg-gradient-to-br from-slate-900 via-emerald-950/20 to-slate-950 p-8 sm:p-12 shadow-2xl">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[100px] rounded-full pointer-events-none" />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center relative z-10">
+            <div className="space-y-6">
+              <div className="inline-flex items-center space-x-2 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <span>AutoFleet Partner Program</span>
+              </div>
+
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight leading-tight">
+                List Your Car & Turn Idle Assets Into Recurring Income
+              </h2>
+
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Host your car on India's most secure fleet network. Earn transparent 80% rental payouts with guaranteed timely bank transfers, strict driver KYC verification, and full control over your calendar.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <span className="text-emerald-400 font-black text-lg">80% Share</span>
+                  <span className="text-slate-400 block text-[11px]">Direct bank payouts per completed trip</span>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <span className="text-indigo-400 font-black text-lg">Strict KYC</span>
+                  <span className="text-slate-400 block text-[11px]">Only verified DL + Govt ID customers drive</span>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <span className="text-amber-400 font-black text-lg">Full Control</span>
+                  <span className="text-slate-400 block text-[11px]">Set your prices & pause availability anytime</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-wrap gap-4">
+                <Link
+                  to="/register?role=owner"
+                  className="inline-flex items-center space-x-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all hover:scale-102"
+                >
+                  <span>Start Hosting Your Vehicle</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/login"
+                  className="inline-flex items-center space-x-2 px-5 py-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white font-semibold text-xs transition"
+                >
+                  <span>Owner Sign In</span>
+                </Link>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="glass-card p-6 rounded-2xl border border-slate-800 bg-slate-900/80 space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">How Hosting Works</h4>
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-start space-x-3">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">1</span>
+                    <div>
+                      <span className="font-bold text-white block">Submit Partner KYC</span>
+                      <span className="text-slate-400 text-[11px]">Upload Aadhaar, PAN & bank coordinates for direct payouts.</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">2</span>
+                    <div>
+                      <span className="font-bold text-white block">List Vehicle with 5 Angles & RC</span>
+                      <span className="text-slate-400 text-[11px]">Submit Front, Back, Sides & Interior photos along with valid insurance & RC.</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">3</span>
+                    <div>
+                      <span className="font-bold text-white block">Get Booked & Receive 80% Payouts</span>
+                      <span className="text-slate-400 text-[11px]">Trips are confirmed, cash or Razorpay collected, and net payout is wired to you.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

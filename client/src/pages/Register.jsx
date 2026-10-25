@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Car, Lock, Mail, User, Phone, Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Car, Lock, Mail, User, Phone, Eye, EyeOff, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import GoogleAuthModal from '../components/GoogleAuthModal';
 
 export default function Register() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { signup, googleLogin } = useAuth();
   const { showToast } = useNotifications();
+
+  const [role, setRole] = useState(searchParams.get('role') === 'owner' ? 'owner' : 'customer');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -43,19 +46,19 @@ export default function Register() {
     }
 
     try {
+      setLoading(true);
       const resp = await signup({
         name: formData.name.trim(),
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim(),
         password: formData.password,
+        role: role
       });
 
       showToast(resp?.message || 'Registration initiated! Please enter the 6-digit verification code.', 'success');
       navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim())}`, {
         state: {
-          email: formData.email.trim(),
-          devOtp: resp?.devOtp || resp?.simulatedOtp,
-          emailWarning: resp?.emailWarning,
+          email: formData.email.trim()
         },
       });
     } catch (err) {
@@ -68,24 +71,23 @@ export default function Register() {
   const [showGoogleModal, setShowGoogleModal] = useState(false);
 
   const handleGoogleSignUp = async () => {
-    // If email already entered in the registration field, authenticate directly
     if (formData.email.trim()) {
       try {
         setLoading(true);
         setError('');
         const result = await googleLogin({
           email: formData.email.trim(),
-          name: formData.name.trim() || undefined
+          name: formData.name.trim() || undefined,
+          role: role
         });
         showToast(`Welcome, ${result.user.name}! Signed up with Google.`, 'success');
-        navigate('/');
+        navigate(role === 'owner' ? '/owner' : '/');
       } catch (err) {
         setError(err.response?.data?.error || 'Google signup failed.');
       } finally {
         setLoading(false);
       }
     } else {
-      // If email was not yet entered, open GoogleAuthModal so user can specify or 1-click continue
       setShowGoogleModal(true);
     }
   };
@@ -101,9 +103,42 @@ export default function Register() {
             Create an Account
           </h2>
           <p className="text-xs text-slate-400">
-            Join our premium vehicle fleet platform to book cars in seconds.
+            Join DriveGrid to rent premium fleet vehicles or earn by listing your car.
           </p>
         </div>
+
+        {/* Role Selector: Customer vs Owner */}
+        <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setRole('customer')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+              role === 'customer'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>Customer</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('owner')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+              role === 'owner'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>Vehicle Owner</span>
+          </button>
+        </div>
+
+        {role === 'owner' && (
+          <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/50 text-[11px] text-indigo-300 flex items-start space-x-2">
+            <ShieldCheck className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+            <span>Partner with DriveGrid: Keep 80% of trip earnings with automated bank payouts and comprehensive verification.</span>
+          </div>
+        )}
 
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-800/60 text-rose-300 text-xs flex items-center space-x-2 animate-fade-in">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
   Car,
@@ -15,12 +15,15 @@ import {
   Calendar
 } from 'lucide-react';
 import api from '../services/api';
+import { useRealtime } from '../context/RealtimeContext';
 
 export default function Vehicles() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recentlyUpdatedIds, setRecentlyUpdatedIds] = useState(new Set());
+  const prevVehiclesRef = useRef([]);
 
   // Filter States
   const [category, setCategory] = useState(searchParams.get('category') || '');
@@ -29,17 +32,26 @@ export default function Vehicles() {
   const [seats, setSeats] = useState(searchParams.get('seats') || '');
   const [maxPrice, setMaxPrice] = useState(searchParams.get('max_price') || '10000');
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [startDate, setStartDate] = useState(searchParams.get('start_datetime') || '');
   const [endDate, setEndDate] = useState(searchParams.get('end_datetime') || '');
   const [sortBy, setSortBy] = useState('price_asc');
+
+  // Debounce search input by 400ms to reduce backend load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  useEffect(() => {
-    const fetchVehicles = async () => {
-      setLoading(true);
+  const fetchVehicles = useCallback(
+    async (isSilent = false) => {
+      if (!isSilent) setLoading(true);
       try {
         const params = new URLSearchParams();
         if (category) params.append('category', category);
@@ -47,23 +59,53 @@ export default function Vehicles() {
         if (transmission) params.append('transmission', transmission);
         if (seats) params.append('seats', seats);
         if (maxPrice) params.append('max_price', maxPrice);
-        if (search) params.append('search', search);
+        if (debouncedSearch) params.append('search', debouncedSearch);
         if (startDate) params.append('start_datetime', startDate);
         if (endDate) params.append('end_datetime', endDate);
         if (sortBy) params.append('sort', sortBy);
 
         const res = await api.get(`/vehicles?${params.toString()}`);
-        setVehicles(res.data || []);
-        setCurrentPage(1);
+        const newVehicles = res.data || [];
+
+        // Identify vehicles that were updated or added
+        if (isSilent && prevVehiclesRef.current.length > 0) {
+          const prevMap = new Map(prevVehiclesRef.current.map((v) => [v.vehicle_id, v]));
+          const changed = new Set();
+          newVehicles.forEach((v) => {
+            const prev = prevMap.get(v.vehicle_id);
+            if (!prev || prev.price_per_day !== v.price_per_day || prev.status !== v.status || prev.name !== v.name) {
+              changed.add(v.vehicle_id);
+            }
+          });
+
+          if (changed.size > 0) {
+            setRecentlyUpdatedIds(changed);
+            setTimeout(() => {
+              setRecentlyUpdatedIds(new Set());
+            }, 1800);
+          }
+        }
+
+        prevVehiclesRef.current = newVehicles;
+        setVehicles(newVehicles);
+        if (!isSilent) setCurrentPage(1);
       } catch (err) {
         console.error('Failed to fetch vehicles:', err);
       } finally {
-        setLoading(false);
+        if (!isSilent) setLoading(false);
       }
-    };
+    },
+    [category, fuelType, transmission, seats, maxPrice, debouncedSearch, startDate, endDate, sortBy]
+  );
 
-    fetchVehicles();
-  }, [category, fuelType, transmission, seats, maxPrice, search, startDate, endDate, sortBy]);
+  useEffect(() => {
+    fetchVehicles(false);
+  }, [fetchVehicles]);
+
+  // Real-time synchronization when vehicle catalog, images, or discounts change
+  useRealtime(['vehicles', 'vehicle_images', 'discounts'], () => {
+    fetchVehicles(true);
+  });
 
   const handleResetFilters = () => {
     setCategory('');
@@ -300,13 +342,18 @@ export default function Vehicles() {
                 {paginatedVehicles.map((vehicle) => (
                   <div
                     key={vehicle.vehicle_id}
-                    className="glass-card rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-900/70 flex flex-col group"
+                    className={`glass-card rounded-2xl overflow-hidden border bg-slate-900/70 flex flex-col group transition-all duration-300 ${
+                      recentlyUpdatedIds.has(vehicle.vehicle_id)
+                        ? 'live-updated-flash ring-2 ring-indigo-500 border-indigo-400'
+                        : 'border-slate-800/80'
+                    }`}
                   >
                     {/* Vehicle Image */}
                     <div className="relative h-48 bg-slate-950 overflow-hidden">
                       <img
                         src={vehicle.image_url || '/vehicles/placeholder.jpg'}
                         alt={vehicle.name}
+                        loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
                           e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80';

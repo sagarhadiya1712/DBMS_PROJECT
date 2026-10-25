@@ -2,15 +2,68 @@ const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const db = require('../db/db');
 const { signToken } = require('../utils/jwt');
-const { generateOTP, hashOTP, compareOTP, sendOTPEmail } = require('../utils/otp');
+const { generateOTP, hashOTP, compareOTP, sendOTPEmail, normalizeEmail, validateEmail } = require('../utils/otp');
 const { syncUserToOracle, recordUserLogin } = require('../db/oracle');
+
+/**
+ * Safely parse SQLite datetime strings ('YYYY-MM-DD HH:MM:SS') or ISO strings into epoch ms
+ */
+function parseDbDate(dateStr) {
+  if (!dateStr) return 0;
+  if (typeof dateStr !== 'string') return new Date(dateStr).getTime();
+  if (dateStr.includes('T')) return new Date(dateStr).getTime();
+  return new Date(dateStr.replace(' ', 'T') + (dateStr.endsWith('Z') ? '' : 'Z')).getTime();
+}
+
+/**
+ * Enforces max 5 OTPs per hour and strict 60-second cooldown per email
+ */
+function checkOtpRateLimit(normalizedEmail) {
+  // 1. Max 5 OTPs per hour
+  const hourRow = db.prepare(`
+    SELECT COUNT(*) as count FROM email_otps 
+    WHERE email = ? AND datetime(created_at) > datetime('now', '-1 hour')
+  `).get(normalizedEmail);
+
+  if (hourRow && hourRow.count >= 5) {
+    return {
+      allowed: false,
+      status: 429,
+      error: 'Maximum OTP request limit reached for this hour (5 OTPs per hour). Please try again after 1 hour.'
+    };
+  }
+
+  // 2. Strict 60-second cooldown from the most recent OTP
+  const latestOtp = db.prepare(`
+    SELECT * FROM email_otps 
+    WHERE email = ? 
+    ORDER BY otp_id DESC LIMIT 1
+  `).get(normalizedEmail);
+
+  if (latestOtp && latestOtp.created_at) {
+    const createdTime = parseDbDate(latestOtp.created_at);
+    const elapsedSeconds = Math.floor((Date.now() - createdTime) / 1000);
+    if (elapsedSeconds < 60 && elapsedSeconds >= 0) {
+      const retryAfter = 60 - elapsedSeconds;
+      return {
+        allowed: false,
+        status: 429,
+        retryAfter,
+        error: `Please wait ${retryAfter}s before requesting a new verification code.`
+      };
+    }
+  }
+
+  return { allowed: true };
+}
 
 // Validation Schemas
 const signupSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   phone: z.string().optional().nullable(),
   email: z.string().email('Valid email address is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters long')
+  password: z.string().min(8, 'Password must be at least 8 characters long'),
+  role: z.enum(['customer', 'owner']).default('customer').optional()
 });
 
 const loginSchema = z.object({
@@ -29,38 +82,67 @@ const completeProfileSchema = z.object({
 
 /**
  * POST /api/auth/signup
- * Validates signup, prevents duplicate verified emails (409),
+ * Validates signup, enforces 60-second cooldown, prevents duplicate verified emails (409),
  * updates existing unverified users, and issues a 60-second bcrypt-hashed OTP.
  */
 async function signup(req, res, next) {
   try {
     const data = signupSchema.parse(req.body);
-    const email = data.email.toLowerCase().trim();
+    const validation = validateEmail(data.email);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const email = validation.email;
     const phone = data.phone ? data.phone.trim() : null;
 
     const existingUser = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    if (existingUser && existingUser.is_verified) {
+      return res.status(409).json({
+        error: 'An account with this email is already verified. Please sign in.'
+      });
+    }
+
+    // Enforce 60-second cooldown & hourly rate limit
+    if (process.env.NODE_ENV !== 'test') {
+      const rateLimitCheck = checkOtpRateLimit(email);
+      if (!rateLimitCheck.allowed) {
+        return res.status(rateLimitCheck.status).json({
+          error: rateLimitCheck.error,
+          retry_after: rateLimitCheck.retryAfter,
+          email
+        });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(data.password, 10);
+    const rawOtp = generateOTP();
+    const hashedOtp = await hashOTP(rawOtp);
+    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
+    const nowIso = new Date().toISOString();
+
+    // Dispatch OTP via Nodemailer (Gmail SMTP)
+    const mailResult = await sendOTPEmail(email, rawOtp);
+    if (!mailResult.success) {
+      return res.status(400).json({
+        error: mailResult.error || 'Failed to dispatch verification email. Please check your email address and try again.'
+      });
+    }
 
     let userId;
     if (existingUser) {
-      if (existingUser.is_verified) {
-        return res.status(409).json({
-          error: 'An account with this email is already verified. Please sign in.'
-        });
-      }
-
-      // Existing unverified user -> update credentials and send fresh OTP
+      // Existing unverified user -> update credentials
       db.prepare(`
-        UPDATE users SET name = ?, phone = ?, password_hash = ?
+        UPDATE users SET name = ?, phone = ?, password_hash = ?, role = COALESCE(?, role)
         WHERE user_id = ?
-      `).run(data.name.trim(), phone, passwordHash, existingUser.user_id);
+      `).run(data.name.trim(), phone, passwordHash, data.role || 'customer', existingUser.user_id);
       userId = existingUser.user_id;
     } else {
       // New user registration
+      const userRole = data.role === 'owner' ? 'owner' : 'customer';
       const insertResult = db.prepare(`
-        INSERT INTO users (name, phone, email, password_hash, role, is_verified, is_blocked)
-        VALUES (?, ?, ?, ?, 'customer', 0, 0)
-      `).run(data.name.trim(), phone, email, passwordHash);
+        INSERT INTO users (name, phone, email, password_hash, role, is_verified, is_blocked, kyc_status)
+        VALUES (?, ?, ?, ?, ?, 0, 0, 'NotSubmitted')
+      `).run(data.name.trim(), phone, email, passwordHash, userRole);
       userId = insertResult.lastInsertRowid;
     }
 
@@ -70,48 +152,19 @@ async function signup(req, res, next) {
       syncUserToOracle(uRecord).catch(() => {});
     } catch (e) {}
 
-    // Invalidate previous unused OTPs for this email
+    // Invalidate previous unused OTPs for this email and persist new OTP record
     db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(email);
-
-    // Generate 6-digit numeric OTP and bcrypt hash
-    const rawOtp = generateOTP();
-    const hashedOtp = await hashOTP(rawOtp);
-    // OTP validity: STRICTLY 60 SECONDS
-    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
-
-    // Persist OTP in email_otps table
     db.prepare(`
       INSERT INTO email_otps (email, otp_hash, expires_at, used, attempts, created_at)
-      VALUES (?, ?, ?, 0, 0, datetime('now'))
-    `).run(email, hashedOtp, expiresAt);
-
-    // Dispatch OTP via Nodemailer (Gmail SMTP)
-    let emailWarning = null;
-    let mailResult = { success: true, simulated: true };
-    try {
-      mailResult = await sendOTPEmail(email, rawOtp);
-      if (mailResult.simulated) {
-        emailWarning = 'Live Gmail SMTP not configured in server/.env. For testing, your 6-digit OTP code is: ' + rawOtp;
-      } else if (!mailResult.success) {
-        emailWarning = `Email delivery issue: ${mailResult.error || 'Check Gmail SMTP settings'}. Your OTP for testing is: ${rawOtp}`;
-      }
-    } catch (mailErr) {
-      console.error('⚠️ Nodemailer delivery error:', mailErr.message);
-      emailWarning = `Email delivery failed: ${mailErr.message}. Your OTP for testing is: ${rawOtp}`;
-    }
+      VALUES (?, ?, ?, 0, 0, ?)
+    `).run(email, hashedOtp, expiresAt, nowIso);
 
     res.status(201).json({
-      message: mailResult.simulated || !mailResult.success
-        ? 'Registration successful. (Demo mode: Gmail credentials not configured in server/.env)'
-        : 'Registration successful. A 6-digit verification code has been dispatched to your email.',
+      message: 'Registration initiated! A 6-digit verification code has been dispatched to your email.',
       email,
       expires_in: 60,
       retry_after: 60,
-      emailWarning,
-      isSimulated: mailResult.simulated || !mailResult.success,
-      ...(mailResult.simulated || !mailResult.success || process.env.NODE_ENV === 'test'
-        ? { simulatedOtp: rawOtp, testOtp: rawOtp, devOtp: rawOtp }
-        : {})
+      ...(process.env.NODE_ENV === 'test' ? { simulatedOtp: rawOtp } : {})
     });
   } catch (err) {
     next(err);
@@ -129,9 +182,13 @@ async function resendOtp(req, res, next) {
       return res.status(400).json({ error: 'Email address is required' });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
+    const validation = validateEmail(email);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const normalizedEmail = validation.email;
 
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
     if (!user) {
       return res.status(404).json({ error: 'No account registered with this email address.' });
     }
@@ -140,76 +197,42 @@ async function resendOtp(req, res, next) {
       return res.status(400).json({ error: 'Account is already verified. You can log in directly.' });
     }
 
-    // Check 1-hour rate limit (max 5 OTPs per hour)
-    const hourCount = db.prepare(`
-      SELECT COUNT(*) as count FROM email_otps 
-      WHERE email = ? AND datetime(created_at) > datetime('now', '-1 hour')
-    `).get(normalizedEmail).count;
-
-    if (hourCount >= 5) {
-      return res.status(429).json({
-        error: 'Maximum OTP limit reached for this hour (5 OTPs per hour). Please try again after 1 hour.'
+    // Rate limiting & 60-second cooldown check
+    const rateLimitCheck = checkOtpRateLimit(normalizedEmail);
+    if (!rateLimitCheck.allowed) {
+      return res.status(rateLimitCheck.status).json({
+        error: rateLimitCheck.error,
+        retry_after: rateLimitCheck.retryAfter,
+        email: normalizedEmail
       });
     }
-
-    // Check 60-second cooldown from the most recent OTP
-    const latestOtp = db.prepare(`
-      SELECT * FROM email_otps 
-      WHERE email = ? 
-      ORDER BY otp_id DESC LIMIT 1
-    `).get(normalizedEmail);
-
-    if (latestOtp && latestOtp.created_at) {
-      const createdTime = new Date(latestOtp.created_at + 'Z').getTime();
-      const elapsedSeconds = Math.floor((Date.now() - createdTime) / 1000);
-      if (elapsedSeconds < 60 && elapsedSeconds >= 0) {
-        const retryAfter = 60 - elapsedSeconds;
-        return res.status(429).json({
-          error: `Please wait ${retryAfter}s before requesting a new verification code.`,
-          retry_after: retryAfter
-        });
-      }
-    }
-
-    // Invalidate previous unused OTPs
-    db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(normalizedEmail);
 
     // Generate new OTP & hash with bcrypt
     const rawOtp = generateOTP();
     const hashedOtp = await hashOTP(rawOtp);
     const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
+    const nowIso = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO email_otps (email, otp_hash, expires_at, used, attempts, created_at)
-      VALUES (?, ?, ?, 0, 0, datetime('now'))
-    `).run(normalizedEmail, hashedOtp, expiresAt);
-
-    let emailWarning = null;
-    let mailResult = { success: true, simulated: true };
-    try {
-      mailResult = await sendOTPEmail(normalizedEmail, rawOtp);
-      if (mailResult.simulated) {
-        emailWarning = 'Live Gmail SMTP not configured in server/.env. For testing, your 6-digit OTP code is: ' + rawOtp;
-      } else if (!mailResult.success) {
-        emailWarning = `Email delivery issue: ${mailResult.error || 'Check Gmail SMTP settings'}. Your OTP for testing is: ${rawOtp}`;
-      }
-    } catch (mailErr) {
-      console.error('⚠️ Nodemailer delivery error on resend:', mailErr.message);
-      emailWarning = `Email delivery failed: ${mailErr.message}. Your OTP for testing is: ${rawOtp}`;
+    const mailResult = await sendOTPEmail(normalizedEmail, rawOtp);
+    if (!mailResult.success) {
+      return res.status(400).json({
+        error: mailResult.error || 'Failed to dispatch verification code. Please check that your email address is active.'
+      });
     }
 
+    // Invalidate previous unused OTPs and record fresh OTP
+    db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(normalizedEmail);
+    db.prepare(`
+      INSERT INTO email_otps (email, otp_hash, expires_at, used, attempts, created_at)
+      VALUES (?, ?, ?, 0, 0, ?)
+    `).run(normalizedEmail, hashedOtp, expiresAt, nowIso);
+
     res.json({
-      message: mailResult.simulated || !mailResult.success
-        ? 'A fresh 6-digit verification code has been generated. (Gmail credentials not configured in server/.env)'
-        : 'A fresh 6-digit verification code has been dispatched to your email.',
+      message: 'A fresh 6-digit verification code has been dispatched to your email.',
       email: normalizedEmail,
       expires_in: 60,
       retry_after: 60,
-      emailWarning,
-      isSimulated: mailResult.simulated || !mailResult.success,
-      ...(mailResult.simulated || !mailResult.success || process.env.NODE_ENV === 'test'
-        ? { simulatedOtp: rawOtp, testOtp: rawOtp, devOtp: rawOtp }
-        : {})
+      ...(process.env.NODE_ENV === 'test' ? { simulatedOtp: rawOtp } : {})
     });
   } catch (err) {
     next(err);
@@ -330,27 +353,38 @@ async function login(req, res, next) {
       return res.status(403).json({ error: 'This account has been suspended. Please contact fleet administration.' });
     }
 
-    // If user is not verified -> issue 403 and dispatch a fresh 60s OTP
+    // If user is not verified -> enforce 60-second cooldown to prevent duplicate OTP emails
     if (!user.is_verified) {
-      db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(normalizedEmail);
+      if (process.env.NODE_ENV !== 'test') {
+        const rateCheck = checkOtpRateLimit(normalizedEmail);
+        if (!rateCheck.allowed) {
+          return res.status(403).json({
+            error: `Your email is not verified yet. An OTP code was recently dispatched to your inbox. Please check your email or wait ${rateCheck.retryAfter}s to request a new code.`,
+            unverified: true,
+            email: normalizedEmail,
+            retry_after: rateCheck.retryAfter
+          });
+        }
+      }
 
       const rawOtp = generateOTP();
       const hashedOtp = await hashOTP(rawOtp);
       const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
+      const nowIso = new Date().toISOString();
 
-      db.prepare(`
-        INSERT INTO email_otps (email, otp_hash, expires_at, used, attempts, created_at)
-        VALUES (?, ?, ?, 0, 0, datetime('now'))
-      `).run(normalizedEmail, hashedOtp, expiresAt);
-
-      try {
-        await sendOTPEmail(normalizedEmail, rawOtp);
-      } catch (mailErr) {
-        console.error('⚠️ Nodemailer delivery failed on login trigger:', mailErr.message);
+      const mailResult = await sendOTPEmail(normalizedEmail, rawOtp);
+      if (mailResult.success) {
+        db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(normalizedEmail);
+        db.prepare(`
+          INSERT INTO email_otps (email, otp_hash, expires_at, used, attempts, created_at)
+          VALUES (?, ?, ?, 0, 0, ?)
+        `).run(normalizedEmail, hashedOtp, expiresAt, nowIso);
       }
 
       return res.status(403).json({
-        error: 'Your email has not been verified yet. We have sent a 6-digit OTP to your inbox.',
+        error: mailResult.success
+          ? 'Your email has not been verified yet. We have sent a 6-digit OTP to your inbox.'
+          : `Your email is unverified, but we could not deliver an email: ${mailResult.error}`,
         unverified: true,
         email: normalizedEmail,
         retry_after: 60
@@ -373,6 +407,8 @@ async function login(req, res, next) {
       role: user.role,
       is_verified: user.is_verified,
       is_blocked: user.is_blocked,
+      kyc_status: user.kyc_status || 'NotSubmitted',
+      kyc_rejection_reason: user.kyc_rejection_reason || null,
       created_at: user.created_at
     };
 
@@ -427,10 +463,11 @@ async function googleAuth(req, res, next) {
 
     if (!user) {
       // New Google User -> automatically verified, no password
+      const userRole = req.body.role === 'owner' ? 'owner' : 'customer';
       const insertResult = db.prepare(`
-        INSERT INTO users (name, email, role, is_verified, is_blocked, google_id)
-        VALUES (?, ?, 'customer', 1, 0, ?)
-      `).run(userName, normalizedEmail, userGoogleId || 'google_' + Date.now());
+        INSERT INTO users (name, email, role, is_verified, is_blocked, google_id, kyc_status)
+        VALUES (?, ?, ?, 1, 0, ?, 'NotSubmitted')
+      `).run(userName, normalizedEmail, userRole, userGoogleId || 'google_' + Date.now());
 
       user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(insertResult.lastInsertRowid);
     } else {
@@ -508,7 +545,7 @@ function completeProfile(req, res, next) {
  */
 function getMe(req, res) {
   const user = db.prepare(`
-    SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, created_at
+    SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, kyc_status, kyc_rejection_reason, created_at
     FROM users WHERE user_id = ?
   `).get(req.user.user_id);
 

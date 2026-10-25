@@ -118,22 +118,19 @@ async function syncSqliteToOracle(sqliteDb) {
     // 1. Sync Users
     const users = sqliteDb.prepare('SELECT * FROM users').all();
     for (const u of users) {
+      const parsedLastLogin = u.last_login ? new Date(u.last_login) : null;
       await executeOracle(
         `MERGE INTO users t
-         USING (SELECT :user_id AS user_id, :name AS name, :phone AS phone, :email AS email,
-                       :password_hash AS password_hash, :role AS role, :is_verified AS is_verified,
-                       :is_blocked AS is_blocked, :google_id AS google_id FROM dual) s
+         USING (SELECT :email AS email FROM dual) s
          ON (t.email = s.email)
          WHEN MATCHED THEN
-           UPDATE SET t.name = s.name, t.phone = s.phone, t.password_hash = s.password_hash,
-                      t.role = s.role, t.is_verified = s.is_verified, t.is_blocked = s.is_blocked,
-                      t.google_id = s.google_id,
-                      t.last_login = CASE WHEN :last_login IS NOT NULL THEN TO_TIMESTAMP(:last_login, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') ELSE t.last_login END
+           UPDATE SET t.name = :name, t.phone = :phone, t.password_hash = :password_hash,
+                      t.role = :role, t.is_verified = :is_verified, t.is_blocked = :is_blocked,
+                      t.google_id = :google_id
          WHEN NOT MATCHED THEN
            INSERT (name, phone, email, password_hash, role, is_verified, is_blocked, google_id)
-           VALUES (s.name, s.phone, s.email, s.password_hash, s.role, s.is_verified, s.is_blocked, s.google_id)`,
+           VALUES (:name, :phone, :email, :password_hash, :role, :is_verified, :is_blocked, :google_id)`,
         {
-          user_id: u.user_id,
           name: u.name,
           phone: u.phone || null,
           email: u.email,
@@ -142,9 +139,18 @@ async function syncSqliteToOracle(sqliteDb) {
           is_verified: u.is_verified ? 1 : 0,
           is_blocked: u.is_blocked ? 1 : 0,
           google_id: u.google_id || null,
-          last_login: u.last_login || null,
         }
       );
+
+      if (parsedLastLogin && !isNaN(parsedLastLogin.getTime())) {
+        await executeOracle(
+          `UPDATE users SET last_login = :last_login WHERE LOWER(email) = LOWER(:email)`,
+          {
+            last_login: parsedLastLogin,
+            email: u.email
+          }
+        );
+      }
     }
 
     // 2. Sync Vehicles
@@ -245,11 +251,80 @@ async function recordUserLogin(email) {
   }
 }
 
+/**
+ * Sync changes from Oracle to SQLite
+ */
+async function syncOracleToSqlite(sqliteDb) {
+  try {
+    const res = await executeOracle(
+      `SELECT vehicle_id, name, brand, category, fuel_type, transmission, seats, price_per_day, price_per_hour, price_per_km, security_deposit, status, image_url FROM vehicles ORDER BY vehicle_id`
+    );
+    if (!res || !res.rows) return 0;
+
+    let updatedCount = 0;
+    const stmtCheck = sqliteDb.prepare('SELECT vehicle_id, name, security_deposit, price_per_day, status FROM vehicles WHERE vehicle_id = ?');
+    const stmtUpdate = sqliteDb.prepare(`
+      UPDATE vehicles SET
+        name = ?,
+        brand = ?,
+        category = ?,
+        fuel_type = ?,
+        transmission = ?,
+        seats = ?,
+        price_per_day = ?,
+        price_per_hour = ?,
+        price_per_km = ?,
+        security_deposit = ?,
+        status = ?,
+        image_url = COALESCE(?, image_url),
+        updated_at = datetime('now')
+      WHERE vehicle_id = ?
+    `);
+
+    for (const [vId, name, brand, category, fuel, trans, seats, priceDay, priceHour, priceKm, secDeposit, status, img] of res.rows) {
+      const existing = stmtCheck.get(vId);
+      if (existing) {
+        if (
+          existing.name !== name ||
+          existing.security_deposit !== secDeposit ||
+          existing.price_per_day !== priceDay ||
+          existing.status !== status
+        ) {
+          stmtUpdate.run(
+            name, brand, category, fuel, trans, seats,
+            priceDay, priceHour, priceKm, secDeposit, status, img,
+            vId
+          );
+          updatedCount++;
+        }
+      }
+    }
+
+    if (updatedCount > 0) {
+      console.log(`⚡ [Oracle -> SQLite Sync] Synchronized ${updatedCount} updated vehicles into SQLite!`);
+      // Update SQLite db_changes
+      sqliteDb.prepare(`
+        INSERT INTO db_changes (table_name, version, changed_at)
+        VALUES ('vehicles', 1, datetime('now'))
+        ON CONFLICT(table_name) DO UPDATE SET
+          version = db_changes.version + 1,
+          changed_at = datetime('now')
+      `).run();
+    }
+    return updatedCount;
+  } catch (err) {
+    console.error('⚠️ [Oracle -> SQLite Sync Error]:', err.message);
+    return 0;
+  }
+}
+
 module.exports = {
   getOraclePool,
   executeOracle,
   initOracleSchema,
   syncSqliteToOracle,
+  syncOracleToSqlite,
   syncUserToOracle,
   recordUserLogin,
 };
+

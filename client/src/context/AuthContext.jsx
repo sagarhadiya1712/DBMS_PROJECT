@@ -40,6 +40,7 @@ export const AuthProvider = ({ children }) => {
     const res = await api.post('/auth/login', { email, password });
     const { token, user: userData } = res.data;
     localStorage.setItem('rental_token', token);
+    localStorage.setItem('token', token);
     localStorage.setItem('rental_user', JSON.stringify(userData));
     setUser(userData);
     return userData;
@@ -54,6 +55,7 @@ export const AuthProvider = ({ children }) => {
     const res = await api.post('/auth/verify-otp', { email, otp });
     const { token, user: userData } = res.data;
     localStorage.setItem('rental_token', token);
+    localStorage.setItem('token', token);
     localStorage.setItem('rental_user', JSON.stringify(userData));
     setUser(userData);
     return userData;
@@ -68,6 +70,7 @@ export const AuthProvider = ({ children }) => {
     const res = await api.post('/auth/google', payload);
     const { token, user: userData, needsPhone } = res.data;
     localStorage.setItem('rental_token', token);
+    localStorage.setItem('token', token);
     localStorage.setItem('rental_user', JSON.stringify(userData));
     setUser(userData);
     return { user: userData, needsPhone };
@@ -83,6 +86,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('rental_token');
+    localStorage.removeItem('token');
     localStorage.removeItem('rental_user');
     setUser(null);
   };
@@ -95,8 +99,10 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'ADMIN';
-  const isCustomer = !isAdmin;
+  const roleLower = user?.role?.toLowerCase();
+  const isAdmin = roleLower === 'admin';
+  const isOwner = roleLower === 'owner';
+  const isCustomer = roleLower === 'customer' || (!isAdmin && !isOwner);
 
   return (
     <AuthContext.Provider
@@ -105,6 +111,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         isAuthenticated: !!user,
         isAdmin,
+        isOwner,
         isCustomer,
         login,
         signup,

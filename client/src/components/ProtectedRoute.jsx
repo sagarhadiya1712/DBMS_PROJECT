@@ -37,3 +37,7 @@ export default function ProtectedRoute({ children, requireAdmin = false, allowed
 export function AdminRoute({ children }) {
   return <ProtectedRoute requireAdmin={true}>{children}</ProtectedRoute>;
 }
+
+export function OwnerRoute({ children }) {
+  return <ProtectedRoute allowedRoles={['owner', 'admin']}>{children}</ProtectedRoute>;
+}

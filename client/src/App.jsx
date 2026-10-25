@@ -1,29 +1,43 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { RealtimeProvider } from './context/RealtimeContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute';
-
-// Customer Pages
-import Home from './pages/Home';
-import Vehicles from './pages/Vehicles';
-import VehicleDetails from './pages/VehicleDetails';
-import BookingCheckout from './pages/BookingCheckout';
-import MyBookings from './pages/MyBookings';
-import Profile from './pages/Profile';
-
-// Auth Pages
-import Login from './pages/Login';
-import Register from './pages/Register';
-import VerifyEmail from './pages/VerifyEmail';
-
-// Admin Pages
-import AdminPortal from './pages/admin/AdminPortal';
-
+import ProtectedRoute, { AdminRoute, OwnerRoute } from './components/ProtectedRoute';
 import CompleteProfileModal from './components/CompleteProfileModal';
 import { useAuth } from './context/AuthContext';
+
+// Route-based Code Splitting with React.lazy
+const Home = lazy(() => import('./pages/Home'));
+const Vehicles = lazy(() => import('./pages/Vehicles'));
+const VehicleDetails = lazy(() => import('./pages/VehicleDetails'));
+const BookingCheckout = lazy(() => import('./pages/BookingCheckout'));
+const MyBookings = lazy(() => import('./pages/MyBookings'));
+const Profile = lazy(() => import('./pages/Profile'));
+const VerifyKYC = lazy(() => import('./pages/VerifyKYC'));
+
+// Auth Pages
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+
+// Partner & Admin Portals
+const OwnerDashboard = lazy(() => import('./pages/owner/OwnerDashboard'));
+const AdminPortal = lazy(() => import('./pages/admin/AdminPortal'));
+
+// Suspense Page Loading Spinner
+function PageLoader() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center bg-slate-950">
+      <div className="flex flex-col items-center space-y-4">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-500" />
+        <p className="text-xs text-slate-400 font-medium animate-pulse">Loading view...</p>
+      </div>
+    </div>
+  );
+}
 
 // 404 Page
 function NotFound() {
@@ -36,7 +50,7 @@ function NotFound() {
       </p>
       <Link
         to="/"
-        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all"
+        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/30"
       >
         Return to Home Fleet
       </Link>
@@ -64,72 +78,102 @@ export default function App() {
     <Router>
       <AuthProvider>
         <NotificationProvider>
-          <GlobalProfileChecker />
-          <div className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 selection:bg-indigo-500 selection:text-white">
+          <RealtimeProvider>
+            <GlobalProfileChecker />
+            <div className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 selection:bg-indigo-500 selection:text-white">
             <Navbar />
             <main className="flex-1">
-              <Routes>
-                {/* Public & Customer Routes */}
-                <Route path="/" element={<Home />} />
-                <Route path="/vehicles" element={<Vehicles />} />
-                <Route path="/vehicles/:id" element={<VehicleDetails />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/signup" element={<Register />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/verify-email" element={<VerifyEmail />} />
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  {/* Public & Customer Routes */}
+                  <Route path="/" element={<Home />} />
+                  <Route path="/vehicles" element={<Vehicles />} />
+                  <Route path="/vehicles/:id" element={<VehicleDetails />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Register />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/verify-email" element={<VerifyEmail />} />
 
-                {/* Customer Authenticated Protected Routes */}
-                <Route
-                  path="/checkout"
-                  element={
-                    <ProtectedRoute>
-                      <BookingCheckout />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/bookings"
-                  element={
-                    <ProtectedRoute>
-                      <MyBookings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/profile"
-                  element={
-                    <ProtectedRoute>
-                      <Profile />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* Customer Authenticated Protected Routes */}
+                  <Route
+                    path="/verify-kyc"
+                    element={
+                      <ProtectedRoute>
+                        <VerifyKYC />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/checkout"
+                    element={
+                      <ProtectedRoute>
+                        <BookingCheckout />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/bookings"
+                    element={
+                      <ProtectedRoute>
+                        <MyBookings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/profile"
+                    element={
+                      <ProtectedRoute>
+                        <Profile />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* Admin Dashboard Protected Routes */}
-                <Route
-                  path="/admin"
-                  element={
-                    <AdminRoute>
-                      <AdminPortal />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="/admin/*"
-                  element={
-                    <AdminRoute>
-                      <AdminPortal />
-                    </AdminRoute>
-                  }
-                />
+                  {/* Owner Partner Portal */}
+                  <Route
+                    path="/owner"
+                    element={
+                      <OwnerRoute>
+                        <OwnerDashboard />
+                      </OwnerRoute>
+                    }
+                  />
+                  <Route
+                    path="/owner/*"
+                    element={
+                      <OwnerRoute>
+                        <OwnerDashboard />
+                      </OwnerRoute>
+                    }
+                  />
 
-                {/* 404 Fallback */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
+                  {/* Admin Dashboard Protected Routes */}
+                  <Route
+                    path="/admin"
+                    element={
+                      <AdminRoute>
+                        <AdminPortal />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/*"
+                    element={
+                      <AdminRoute>
+                        <AdminPortal />
+                      </AdminRoute>
+                    }
+                  />
+
+                  {/* 404 Fallback */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
             </main>
             <Footer />
           </div>
-        </NotificationProvider>
-      </AuthProvider>
-    </Router>
+        </RealtimeProvider>
+      </NotificationProvider>
+    </AuthProvider>
+  </Router>
   );
 }

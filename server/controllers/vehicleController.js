@@ -41,11 +41,13 @@ function listVehicles(req, res, next) {
         COALESCE(ROUND(AVG(r.rating), 1), 5.0) AS avg_rating,
         COUNT(r.review_id) AS total_reviews,
         d.name AS driver_name,
-        d.phone AS driver_phone
+        d.phone AS driver_phone,
+        u.name AS owner_name
       FROM vehicles v
       LEFT JOIN reviews r ON v.vehicle_id = r.vehicle_id
       LEFT JOIN drivers d ON v.vehicle_id = d.vehicle_id
-      WHERE 1=1
+      LEFT JOIN users u ON v.owner_id = u.user_id
+      WHERE v.deleted_at IS NULL AND v.approval_status = 'Approved'
     `;
     const params = [];
 
@@ -90,8 +92,11 @@ function listVehicles(req, res, next) {
       query += `
         AND v.vehicle_id NOT IN (
           SELECT b.vehicle_id FROM bookings b
-          WHERE b.status IN ('Pending', 'Approved', 'Active')
-            AND NOT (b.end_datetime <= ? OR b.start_datetime >= ?)
+          WHERE (
+            b.status IN ('Confirmed', 'Approved', 'Active', 'Pending')
+            OR (b.status = 'Awaiting Payment' AND datetime(b.hold_expires_at) > datetime('now'))
+          )
+          AND NOT (datetime(b.end_datetime) <= datetime(?) OR datetime(b.start_datetime) >= datetime(?))
         )
       `;
       params.push(start_datetime, end_datetime);
@@ -129,11 +134,13 @@ function getVehicleById(req, res, next) {
         d.driver_id,
         d.name AS driver_name,
         d.phone AS driver_phone,
-        d.license_no AS driver_license
+        d.license_no AS driver_license,
+        u.name AS owner_name
       FROM vehicles v
       LEFT JOIN reviews r ON v.vehicle_id = r.vehicle_id
       LEFT JOIN drivers d ON v.vehicle_id = d.vehicle_id
-      WHERE v.vehicle_id = ?
+      LEFT JOIN users u ON v.owner_id = u.user_id
+      WHERE v.vehicle_id = ? AND v.deleted_at IS NULL
       GROUP BY v.vehicle_id
     `).get(id);
 
@@ -150,17 +157,33 @@ function getVehicleById(req, res, next) {
       ORDER BY r.created_at DESC
     `).all(id);
 
-    // Fetch existing active/approved booked date ranges to inform customer calendar
+    // Fetch multi-angle photos from vehicle_images
+    const photos = db.prepare(`
+      SELECT * FROM vehicle_images WHERE vehicle_id = ? ORDER BY is_primary DESC, image_id ASC
+    `).all(id);
+
+    // Fetch verified document badges
+    const verifiedDocs = db.prepare(`
+      SELECT doc_type, status, expiry_date FROM vehicle_documents WHERE vehicle_id = ?
+    `).all(id);
+
+    // Fetch existing active/approved/confirmed booked date ranges to inform customer calendar
     const bookedRanges = db.prepare(`
       SELECT booking_id, start_datetime, end_datetime, status
       FROM bookings
-      WHERE vehicle_id = ? AND status IN ('Pending', 'Approved', 'Active')
+      WHERE vehicle_id = ?
+        AND (
+          status IN ('Confirmed', 'Approved', 'Active', 'Pending')
+          OR (status = 'Awaiting Payment' AND datetime(hold_expires_at) > datetime('now'))
+        )
       ORDER BY start_datetime ASC
     `).all(id);
 
     res.json({
       ...vehicle,
       reviews,
+      photos,
+      verified_docs: verifiedDocs,
       booked_ranges: bookedRanges
     });
   } catch (err) {
@@ -233,18 +256,22 @@ function deleteVehicle(req, res, next) {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
 
-    // Check for active bookings
+    // Check for active or confirmed bookings
     const active = db.prepare(`
       SELECT count(*) as count FROM bookings
-      WHERE vehicle_id = ? AND status IN ('Active', 'Approved')
+      WHERE vehicle_id = ?
+        AND (
+          status IN ('Confirmed', 'Approved', 'Active')
+          OR (status = 'Awaiting Payment' AND datetime(hold_expires_at) > datetime('now'))
+        )
     `).get(id);
 
     if (active.count > 0) {
-      return res.status(400).json({ error: 'Cannot delete vehicle with active or upcoming approved bookings.' });
+      return res.status(400).json({ error: 'Cannot delete vehicle with active, confirmed, or held bookings.' });
     }
 
-    db.prepare('DELETE FROM vehicles WHERE vehicle_id = ?').run(id);
-    res.json({ message: 'Vehicle deleted successfully', vehicle_id: id });
+    db.prepare("UPDATE vehicles SET deleted_at = datetime('now') WHERE vehicle_id = ?").run(id);
+    res.json({ message: 'Vehicle soft deleted successfully', vehicle_id: id });
   } catch (err) {
     next(err);
   }

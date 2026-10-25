@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import api, { API_BASE_URL } from '../services/api';
 import { useNotifications } from '../context/NotificationContext';
+import { useRealtime } from '../context/RealtimeContext';
 
 // Countdown Timer component for Awaiting Payment holds
 function HoldCountdown({ expiresAt, onExpired }) {
@@ -66,20 +67,26 @@ export default function MyBookings() {
   const [comment, setComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (isSilent = false) => {
     try {
+      if (!isSilent) setLoading(true);
       const res = await api.get('/bookings/my');
       setBookings(res.data || []);
     } catch (err) {
-      showToast('Failed to load your bookings.', 'error');
+      if (!isSilent) showToast('Failed to load your bookings.', 'error');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchBookings();
+    fetchBookings(false);
   }, []);
+
+  // Real-time synchronization when bookings or payments change
+  useRealtime(['bookings', 'payments'], () => {
+    fetchBookings(true);
+  });
 
   // Cancel Booking
   const handleCancelBooking = async (bookingId) => {

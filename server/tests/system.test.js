@@ -87,6 +87,38 @@ describe('Vehicle Rental & Fleet Management System - Full Test Suite', () => {
       expect(verifyRes.body.token).toBeDefined();
       expect(verifyRes.body.user.is_verified).toBe(1);
       customerToken = verifyRes.body.token;
+
+      // Rule: Customer without KYC must be rejected with 403
+      const blockedBooking = await request(app)
+        .post('/api/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          vehicle_id: 1,
+          start_datetime: new Date(Date.now() + 50 * 24 * 60 * 60 * 1000).toISOString(),
+          end_datetime: new Date(Date.now() + 53 * 24 * 60 * 60 * 1000).toISOString()
+        });
+      expect(blockedBooking.status).toBe(403);
+      expect(blockedBooking.body.error).toMatch(/Pehle KYC complete karo/i);
+
+      // Customer submits KYC Driving License
+      const kycRes = await request(app)
+        .post('/api/kyc/submit-document')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          doc_type: 'DrivingLicense_Front',
+          doc_number: 'DL0420230099887',
+          file_path: 'demo_rahul_dl_front.jpg',
+          expiry_date: '2030-01-01'
+        });
+      expect(kycRes.status).toBe(201);
+
+      // Admin approves Customer KYC
+      const approveRes = await request(app)
+        .patch(`/api/kyc/admin/user/${verifyRes.body.user.user_id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'Approved' });
+      expect(approveRes.status).toBe(200);
+      expect(approveRes.body.kyc_status).toBe('Approved');
     });
   });
 

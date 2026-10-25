@@ -13,8 +13,11 @@ const db = new Database(dbPath, {
   // verbose: process.env.NODE_ENV === 'development' ? console.log : null
 });
 
-// Enforce foreign keys and live disk write mode for VS Code SQLite viewer
+// Enforce foreign keys, fast cache, memory temp store, and synchronous mode
 db.pragma('foreign_keys = ON');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -20000'); // 20 MB cache
+db.pragma('temp_store = MEMORY');
 
 // Development uses DELETE mode so changes write immediately to rental.db without WAL delay
 // Production can switch to WAL mode for high concurrency
@@ -23,6 +26,30 @@ try {
   db.pragma(`journal_mode = ${journalMode}`);
 } catch (e) {
   // If concurrent process holds a lock, continue with current mode
+}
+
+// In-memory prepared statement cache
+const statementCache = new Map();
+db.cachedPrepare = function (sql) {
+  let stmt = statementCache.get(sql);
+  if (!stmt) {
+    stmt = db.prepare(sql);
+    statementCache.set(sql, stmt);
+  }
+  return stmt;
+};
+
+// Create high-performance indexes on filter and join columns
+try {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_vehicles_filter ON vehicles(status, category);
+    CREATE INDEX IF NOT EXISTS idx_bookings_lookup ON bookings(vehicle_id, start_datetime, end_datetime);
+    CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
+    CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_hold ON bookings(status, hold_expires_at);
+  `);
+} catch (e) {
+  // Table might not be ready yet
 }
 
 // Self-healing migration for email_otps table (ensure attempts and created_at columns exist)

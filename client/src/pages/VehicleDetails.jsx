@@ -19,6 +19,7 @@ import {
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useRealtime } from '../context/RealtimeContext';
 
 export default function VehicleDetails() {
   const { id } = useParams();
@@ -43,14 +44,16 @@ export default function VehicleDetails() {
   // Conflict state
   const [hasConflict, setHasConflict] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
-  useEffect(() => {
-    const fetchVehicle = async () => {
-      try {
-        const res = await api.get(`/vehicles/${id}`);
-        setVehicle(res.data);
+  const fetchVehicle = React.useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const res = await api.get(`/vehicles/${id}`);
+      setVehicle(res.data);
 
-        // Prepopulate default booking window (Tomorrow 10:00 to +3 Days 10:00)
+      // Only set initial dates if not already entered by user
+      if (!isSilent) {
         const now = new Date();
         const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
         tomorrow.setHours(10, 0, 0, 0);
@@ -61,17 +64,24 @@ export default function VehicleDetails() {
           return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         };
 
-        setStartDateTime(toInputString(tomorrow));
-        setEndDateTime(toInputString(inThreeDays));
-      } catch (err) {
-        setError('Failed to load vehicle details. Please try again.');
-      } finally {
-        setLoading(false);
+        setStartDateTime((prev) => prev || toInputString(tomorrow));
+        setEndDateTime((prev) => prev || toInputString(inThreeDays));
       }
-    };
-
-    fetchVehicle();
+    } catch (err) {
+      if (!isSilent) setError('Failed to load vehicle details. Please try again.');
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchVehicle(false);
+  }, [fetchVehicle]);
+
+  // Real-time synchronization for vehicle edits, reviews, and bookings
+  useRealtime(['vehicles', 'vehicle_images', 'reviews', 'bookings', 'discounts'], () => {
+    fetchVehicle(true);
+  });
 
   // Live Overlap Check against booked_ranges
   useEffect(() => {
@@ -163,6 +173,13 @@ export default function VehicleDetails() {
       return;
     }
 
+    // KYC Enforcement Check
+    if (user.role === 'customer' && vehicle.is_chauffeur_driven !== 1 && user.kyc_status !== 'Approved') {
+      showToast('Pehle KYC complete karo. Driving license required for self-drive booking.', 'error');
+      navigate('/verify-kyc');
+      return;
+    }
+
     if (hasConflict) {
       showToast('Selected dates conflict with an existing reservation. Please adjust dates.', 'error');
       return;
@@ -219,18 +236,23 @@ export default function VehicleDetails() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* LEFT COLUMN: Image, Specs, Pricing Table, Reviews */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Main Showcase Image */}
+          {/* Main Showcase Image & Photo Carousel */}
           <div className="glass-card rounded-3xl overflow-hidden border border-slate-800 bg-slate-900/80 relative">
+            {/* Main Active Image */}
             <div className="h-96 w-full bg-slate-950 overflow-hidden relative">
               <img
-                src={vehicle.image_url || '/vehicles/placeholder.jpg'}
+                src={
+                  vehicle.photos && vehicle.photos.length > 0
+                    ? (vehicle.photos[activePhotoIndex]?.file_path || vehicle.photos[activePhotoIndex]?.thumb_path || vehicle.image_url)
+                    : (vehicle.image_url || '/vehicles/placeholder.jpg')
+                }
                 alt={vehicle.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transition-all duration-300"
                 onError={(e) => {
                   e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80';
                 }}
               />
-              <div className="absolute top-4 left-4 flex gap-2">
+              <div className="absolute top-4 left-4 flex flex-wrap gap-2">
                 <span className="px-3 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-white text-xs font-bold border border-slate-700">
                   {vehicle.category}
                 </span>
@@ -243,8 +265,50 @@ export default function VehicleDetails() {
                 >
                   {vehicle.status}
                 </span>
+
+                {/* Hosted by Partner Badge */}
+                {vehicle.owner_name && (
+                  <span className="px-3 py-1 rounded-full bg-indigo-950/80 backdrop-blur-md text-indigo-300 text-xs font-bold border border-indigo-700/60 shadow-md flex items-center space-x-1">
+                    <span>Hosted by</span>
+                    <span className="text-white font-extrabold">{vehicle.owner_name.split(' ')[0]}</span>
+                  </span>
+                )}
               </div>
+
+              {/* Photo Type Indicator Tag */}
+              {vehicle.photos && vehicle.photos.length > 0 && (
+                <div className="absolute bottom-4 right-4 px-3 py-1 rounded-xl bg-black/70 backdrop-blur-md text-slate-200 text-xs font-semibold border border-slate-800">
+                  Angle: {vehicle.photos[activePhotoIndex]?.image_type || 'Showcase'} ({activePhotoIndex + 1}/{vehicle.photos.length})
+                </div>
+              )}
             </div>
+
+            {/* Thumbnail Carousel */}
+            {vehicle.photos && vehicle.photos.length > 1 && (
+              <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex gap-2 overflow-x-auto">
+                {vehicle.photos.map((ph, idx) => (
+                  <button
+                    key={ph.image_id || idx}
+                    type="button"
+                    onClick={() => setActivePhotoIndex(idx)}
+                    className={`relative w-20 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition-all ${
+                      activePhotoIndex === idx
+                        ? 'border-indigo-500 scale-105 shadow-md shadow-indigo-600/30'
+                        : 'border-slate-800 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={ph.thumb_path || ph.file_path}
+                      alt={ph.image_type}
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] text-white text-center font-bold">
+                      {ph.image_type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="p-6">
               <div className="flex justify-between items-start">
@@ -252,9 +316,15 @@ export default function VehicleDetails() {
                   <h1 className="text-2xl sm:text-3xl font-black text-white">
                     {vehicle.brand} {vehicle.name}
                   </h1>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Premium Indian fleet registered • All permits verified
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs text-slate-400">
+                      Indian RTO Registered: <span className="font-mono text-slate-300 font-bold">{vehicle.registration_number || 'GJ05AB1234'}</span>
+                    </span>
+                    <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>RC, Insurance & Fitness Verified</span>
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-amber-400 text-sm font-bold">
                   <Star className="w-4 h-4 fill-amber-400" />
@@ -415,6 +485,84 @@ export default function VehicleDetails() {
                 Instant Lock
               </span>
             </div>
+
+            {/* KYC STATUS BANNER (Phase 4C) */}
+            {!user ? (
+              <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 text-xs flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-indigo-300">
+                  <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <span>Sign in to verify KYC & book this ride</span>
+                </div>
+                <Link
+                  to="/login"
+                  state={{ from: { pathname: `/vehicles/${id}` } }}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold text-[11px]"
+                >
+                  Sign In
+                </Link>
+              </div>
+            ) : user.role === 'customer' ? (
+              user.kyc_status === 'Approved' ? (
+                <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-800/60 text-xs flex items-center space-x-2 text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold">Identity Verified Customer</span>
+                    <span className="text-[11px] text-slate-400 block">Driving license approved for instant booking</span>
+                  </div>
+                </div>
+              ) : user.kyc_status === 'Pending' ? (
+                <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/60 text-xs flex items-center space-x-2 text-amber-300">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold">Verification In Progress</span>
+                    <span className="text-[11px] text-slate-400 block">Verification chal rahi hai (reviewed within 24 hours)</span>
+                  </div>
+                </div>
+              ) : user.kyc_status === 'Rejected' ? (
+                <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-800/60 text-xs space-y-2">
+                  <div className="flex items-start space-x-2 text-rose-300">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">KYC Rejected</span>
+                      <span className="text-[11px] text-slate-300">
+                        {user.kyc_rejection_reason || 'Document photo unclear or expired'}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    to="/verify-kyc"
+                    className="block w-full py-1.5 text-center rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+                  >
+                    Re-Upload Documents
+                  </Link>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 text-xs space-y-2">
+                  <div className="flex items-start space-x-2 text-indigo-300">
+                    <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">KYC Verification Required</span>
+                      <span className="text-[11px] text-slate-300">
+                        Govt ID & Driving License required prior to rental reservation
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    to="/verify-kyc"
+                    className="block w-full py-1.5 text-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+                  >
+                    Verify Identity
+                  </Link>
+                </div>
+              )
+            ) : null}
+
+            {vehicle.is_chauffeur_driven === 1 && (
+              <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Chauffeur provided: DL not required, basic ID proof only.</span>
+              </div>
+            )}
 
             {/* Date Pickers */}
             <div className="space-y-3">

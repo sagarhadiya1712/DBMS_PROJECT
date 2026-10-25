@@ -5,6 +5,9 @@ node_modules/
 dev.db
 dev.db-journal
 *.db
+rental.db
+rental.backup.db
+rental.db.bak*
 *.sqlite
 *.db-shm
 *.db-wal
@@ -13,3 +16,10 @@ dist/
 .DS_Store
 uploads/*
 !uploads/.gitkeep
+/uploads
+/server/public/uploads/*
+!/server/public/uploads/.gitkeep
+/server/uploads/*
+!/server/uploads/.gitkeep
+/server/private_uploads/*
+!/server/private_uploads/.gitkeep

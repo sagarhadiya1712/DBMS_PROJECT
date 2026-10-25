@@ -57,4 +57,12 @@ export const NotificationProvider = ({ children }) => {
   );
 };
 
-export const useNotifications = () => useContext(NotificationContext);
+export const useNotifications = () => {
+  const ctx = useContext(NotificationContext);
+  return {
+    ...ctx,
+    addNotification: (msg, type) => ctx?.showToast(msg, type),
+  };
+};
+
+export const useNotification = useNotifications;

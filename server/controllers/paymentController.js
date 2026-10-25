@@ -372,11 +372,27 @@ function getInvoice(req, res, next) {
   }
 }
 
+// DELETE /api/payments/:id (Admin soft delete)
+function deletePayment(req, res, next) {
+  try {
+    const { id } = req.params;
+    const payment = db.prepare('SELECT payment_id FROM payments WHERE payment_id = ?').get(id);
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found.' });
+    }
+    db.prepare("UPDATE payments SET deleted_at = datetime('now') WHERE payment_id = ?").run(id);
+    res.json({ message: 'Payment record soft deleted successfully.', payment_id: id });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createOrder,
   verifyPayment,
   retryPayment,
   handleWebhook,
   collectCashPayment,
-  getInvoice
+  getInvoice,
+  deletePayment
 };

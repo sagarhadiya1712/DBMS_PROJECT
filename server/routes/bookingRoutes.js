@@ -13,5 +13,6 @@ router.get('/', authenticateToken, requireAdmin, bookingController.getAllBooking
 router.patch('/:id/approve', authenticateToken, requireAdmin, bookingController.approveBooking);
 router.patch('/:id/reject', authenticateToken, requireAdmin, bookingController.rejectBooking);
 router.patch('/:id/complete', authenticateToken, requireAdmin, bookingController.completeBooking);
+router.delete('/:id', authenticateToken, requireAdmin, bookingController.deleteBooking);
 
 module.exports = router;

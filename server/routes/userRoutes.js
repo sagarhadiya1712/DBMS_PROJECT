@@ -9,5 +9,6 @@ router.patch('/profile', authenticateToken, userController.updateProfile);
 // Admin user management
 router.get('/', authenticateToken, requireAdmin, userController.getUsers);
 router.patch('/:id/block', authenticateToken, requireAdmin, userController.toggleBlockUser);
+router.delete('/:id', authenticateToken, requireAdmin, userController.deleteUser);
 
 module.exports = router;

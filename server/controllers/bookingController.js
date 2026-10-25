@@ -56,14 +56,54 @@ async function createBooking(req, res, next) {
       return res.status(400).json({ error: 'End date/time must be strictly after start date/time.' });
     }
 
+    const nowWithTolerance = new Date(Date.now() - 5 * 60 * 1000); // 5 min clock drift tolerance
+    if (start < nowWithTolerance) {
+      return res.status(400).json({ error: 'Start date/time cannot be in the past.' });
+    }
+
     // 1. Fetch vehicle
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE vehicle_id = ?').get(data.vehicle_id);
+    const vehicle = db.prepare('SELECT * FROM vehicles WHERE vehicle_id = ? AND deleted_at IS NULL').get(data.vehicle_id);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found.' });
     }
 
+    if (vehicle.approval_status !== 'Approved') {
+      return res.status(400).json({ error: 'This vehicle is pending verification and is not currently available for booking.' });
+    }
+
     if (vehicle.status === 'In Service') {
       return res.status(400).json({ error: 'This vehicle is currently undergoing maintenance and is not available for rental.' });
+    }
+
+    // KYC Verification Guard:
+    // Rule: Customer kyc_status must be 'Approved'
+    if (user.kyc_status !== 'Approved') {
+      return res.status(403).json({
+        error: 'Pehle KYC complete karo: You must have an approved KYC verification to book a vehicle.',
+        kyc_status: user.kyc_status || 'NotSubmitted'
+      });
+    }
+
+    // Driving license check for self-drive rentals
+    if (!vehicle.is_chauffeur_driven) {
+      const dlDoc = db.prepare(`
+        SELECT doc_number, expiry_date, status
+        FROM kyc_documents
+        WHERE user_id = ? AND doc_type IN ('DrivingLicense_Front', 'DrivingLicense_Back') AND status = 'Approved'
+        ORDER BY expiry_date DESC LIMIT 1
+      `).get(userId);
+
+      if (!dlDoc) {
+        return res.status(403).json({
+          error: 'Pehle KYC complete karo: An approved Driving License is required for self-drive rentals.'
+        });
+      }
+
+      if (dlDoc.expiry_date && new Date(dlDoc.expiry_date) < end) {
+        return res.status(403).json({
+          error: 'License expire ho chuka hai: Your Driving License expires before the rental end date. Please update your license.'
+        });
+      }
     }
 
     // 2. Strict Overlap Check (Zero Double-Booking Guard)
@@ -488,6 +528,24 @@ function completeBooking(req, res, next) {
         SET status = 'Available'
         WHERE vehicle_id = ?
       `).run(booking.vehicle_id);
+
+      // Auto-calculate Owner Payout if this vehicle is owned by a partner
+      const vehicleOwner = db.prepare('SELECT owner_id FROM vehicles WHERE vehicle_id = ?').get(booking.vehicle_id);
+      if (vehicleOwner && vehicleOwner.owner_id) {
+        const ownerProfile = db.prepare('SELECT commission_percent FROM owner_profiles WHERE owner_id = ?').get(vehicleOwner.owner_id);
+        const commissionPercent = ownerProfile ? ownerProfile.commission_percent : 20.0;
+        const grossAmount = booking.total_amount;
+        const commissionAmount = Math.round(grossAmount * (commissionPercent / 100.0) * 100) / 100;
+        const payoutAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
+
+        const existingPayout = db.prepare('SELECT payout_id FROM owner_payouts WHERE booking_id = ?').get(id);
+        if (!existingPayout) {
+          db.prepare(`
+            INSERT INTO owner_payouts (owner_id, booking_id, gross_amount, commission_amount, payout_amount, status)
+            VALUES (?, ?, ?, ?, ?, 'Pending')
+          `).run(vehicleOwner.owner_id, id, grossAmount, commissionAmount, payoutAmount);
+        }
+      }
     })();
 
     const updated = db.prepare('SELECT * FROM bookings WHERE booking_id = ?').get(id);
@@ -501,6 +559,22 @@ function completeBooking(req, res, next) {
   }
 }
 
+// DELETE /api/bookings/:id (Soft delete)
+function deleteBooking(req, res, next) {
+  try {
+    const { id } = req.params;
+    const booking = db.prepare('SELECT * FROM bookings WHERE booking_id = ?').get(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found.' });
+    }
+
+    db.prepare("UPDATE bookings SET deleted_at = datetime('now') WHERE booking_id = ?").run(id);
+    res.json({ message: 'Booking soft deleted successfully.', booking_id: id });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createBooking,
   getMyBookings,
@@ -508,5 +582,6 @@ module.exports = {
   getAllBookings,
   approveBooking,
   rejectBooking,
-  completeBooking
+  completeBooking,
+  deleteBooking
 };
