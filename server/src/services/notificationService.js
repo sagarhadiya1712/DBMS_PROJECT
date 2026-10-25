@@ -1,19 +1,21 @@
 const nodemailer = require('nodemailer');
 const prisma = require('../config/db');
 
-// Nodemailer transporter initialization
-let mailTransporter;
-try {
-  mailTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: Number(process.env.SMTP_PORT) || 587,
-    auth: {
-      user: process.env.SMTP_USER || 'mock_user@ethereal.email',
-      pass: process.env.SMTP_PASS || 'mock_pass',
-    },
-  });
-} catch (e) {
-  console.warn('Mailer setup warning:', e.message);
+// Nodemailer transporter initialization (only initialized if SMTP credentials are provided)
+let mailTransporter = null;
+if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  try {
+    mailTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  } catch (e) {
+    console.warn('Mailer setup warning:', e.message);
+  }
 }
 
 class NotificationService {

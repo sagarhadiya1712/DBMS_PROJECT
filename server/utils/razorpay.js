@@ -1,11 +1,11 @@
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 
-const key_id = process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key';
-const key_secret = process.env.RAZORPAY_KEY_SECRET || 'rzp_test_placeholder_secret';
+const key_id = process.env.RAZORPAY_KEY_ID || '';
+const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
 
 let instance = null;
-if (key_id && key_secret && key_id !== 'rzp_test_placeholder_key') {
+if (key_id && key_secret) {
   try {
     instance = new Razorpay({ key_id, key_secret });
   } catch (err) {
@@ -43,15 +43,15 @@ async function createRazorpayOrder({ amount, currency = 'INR', receipt, notes = 
     id: mockOrderId,
     amount: amountInPaise,
     currency,
-    key_id: key_id || 'rzp_test_mock_12345',
+    key_id: key_id || '',
     isSimulated: true
   };
 }
 
 function verifyRazorpaySignature({ order_id, payment_id, signature }) {
   if (!signature) return false;
-  // If simulated mode
-  if (order_id.startsWith('order_') && (!instance || key_secret === 'rzp_test_placeholder_secret')) {
+  // If simulated mode (no live Razorpay keys configured)
+  if (order_id.startsWith('order_') && (!instance || !key_secret)) {
     return true;
   }
 

@@ -55,8 +55,8 @@ export default function AdminDashboard() {
   }, []);
 
   const handleExport = (format) => {
-    const token = localStorage.getItem('fleet_access_token');
-    const url = `http://localhost:5000/api/admin/reports?format=${format}`;
+    const apiBase = import.meta.env.VITE_API_URL || '/api';
+    const url = `${apiBase}/admin/reports?format=${format}`;
     fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     })
