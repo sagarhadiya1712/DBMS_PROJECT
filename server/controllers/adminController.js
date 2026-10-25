@@ -22,6 +22,14 @@ function getStats(req, res, next) {
       WHERE p.payment_status = 'Paid'
     `).get();
 
+    const pendingCodResult = db.prepare(`
+      SELECT COALESCE(SUM(b.total_amount + b.late_fee), 0) AS pending_cod_amount,
+             COUNT(b.booking_id) AS pending_cod_count
+      FROM bookings b
+      JOIN payments p ON b.booking_id = p.booking_id
+      WHERE b.payment_method = 'COD' AND p.payment_status = 'Pending' AND b.status IN ('Confirmed', 'Active')
+    `).get();
+
     const activeRentals = db.prepare(`
       SELECT count(*) as count FROM bookings
       WHERE status IN ('Active', 'Approved')
@@ -36,6 +44,8 @@ function getStats(req, res, next) {
       in_service_vehicles: inService,
       todays_bookings: todaysBookings,
       total_revenue: revenueResult.total_revenue,
+      pending_cod_collection: pendingCodResult.pending_cod_amount,
+      pending_cod_count: pendingCodResult.pending_cod_count,
       active_rentals: activeRentals,
       total_customers: totalCustomers
     });

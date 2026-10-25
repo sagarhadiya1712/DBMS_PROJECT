@@ -6,6 +6,10 @@ const { authenticateToken } = require('../middleware/auth');
 // Protected Customer/Admin Payment Actions
 router.post('/create-order', authenticateToken, paymentController.createOrder);
 router.post('/verify', authenticateToken, paymentController.verifyPayment);
+router.post('/:bookingId/retry', authenticateToken, paymentController.retryPayment);
+
+// Razorpay Webhook (Public, signature-verified)
+router.post('/webhook', paymentController.handleWebhook);
 
 // PDF Invoice Download (Token or query auth can be used, allow authenticated or direct booking ID access)
 router.get('/invoice/:bookingId', paymentController.getInvoice);

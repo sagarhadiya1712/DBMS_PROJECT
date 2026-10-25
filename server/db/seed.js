@@ -335,18 +335,19 @@ async function seed() {
   insertDiscount.run('FLEET20', 20, '2026-01-01', '2027-12-31', 1);
   console.log('  🎟️ Seeded 2 discount vouchers (WELCOME10, FLEET20)');
 
-  // 5. Seed 5 Sample Bookings with various statuses
+  // 5. Seed Sample Bookings with various statuses (including COD & Awaiting Payment)
   const insertBooking = db.prepare(`
     INSERT INTO bookings (
       user_id, vehicle_id, start_datetime, end_datetime,
-      pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      pricing_type, total_amount, deposit_amount, discount_amount, late_fee,
+      status, payment_method, hold_expires_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertPayment = db.prepare(`
     INSERT INTO payments (
-      booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at, collected_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Past dates for completed booking
@@ -367,27 +368,38 @@ async function seed() {
   const futureStart3 = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString();
   const futureEnd3 = new Date(now.getTime() + 17 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Booking 1: Completed
-  const b1 = insertBooking.run(cust1Id, vehicleIds[0], pastStart, pastEnd, 'day', 5400, 3000, 0, 0, 'Completed', pastStart).lastInsertRowid;
-  insertPayment.run(b1, 5400, 'Razorpay', 'order_demo_101', 'pay_demo_101', 'Paid', pastStart);
+  const futureStart4 = new Date(now.getTime() + 20 * 24 * 60 * 60 * 1000).toISOString();
+  const futureEnd4 = new Date(now.getTime() + 22 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Booking 2: Active
-  const b2 = insertBooking.run(cust1Id, vehicleIds[3], activeStart, activeEnd, 'day', 9600, 5000, 960, 0, 'Active', activeStart).lastInsertRowid;
-  insertPayment.run(b2, 9600, 'Razorpay', 'order_demo_102', 'pay_demo_102', 'Paid', activeStart);
+  const futureStart5 = new Date(now.getTime() + 25 * 24 * 60 * 60 * 1000).toISOString();
+  const futureEnd5 = new Date(now.getTime() + 27 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Booking 3: Approved (Upcoming)
-  const b3 = insertBooking.run(cust2Id, vehicleIds[6], futureStart1, futureEnd1, 'day', 14400, 7000, 0, 0, 'Approved', now.toISOString()).lastInsertRowid;
-  insertPayment.run(b3, 14400, 'Razorpay', 'order_demo_103', 'pay_demo_103', 'Paid', now.toISOString());
+  // Booking 1: Completed (Online)
+  const b1 = insertBooking.run(cust1Id, vehicleIds[0], pastStart, pastEnd, 'day', 5400, 3000, 0, 0, 'Completed', 'ONLINE', null, pastStart).lastInsertRowid;
+  insertPayment.run(b1, 5400, 'Card', 'order_demo_101', 'pay_demo_101', 'Paid', pastStart, null);
 
-  // Booking 4: Pending approval
-  const b4 = insertBooking.run(cust2Id, luxuryVehicleId, futureStart2, futureEnd2, 'day', 13000, 10000, 1300, 0, 'Pending', now.toISOString()).lastInsertRowid;
-  insertPayment.run(b4, 13000, 'Razorpay', 'order_demo_104', 'pay_demo_104', 'Paid', now.toISOString());
+  // Booking 2: Active (Online)
+  const b2 = insertBooking.run(cust1Id, vehicleIds[3], activeStart, activeEnd, 'day', 9600, 5000, 960, 0, 'Active', 'ONLINE', null, activeStart).lastInsertRowid;
+  insertPayment.run(b2, 9600, 'Card', 'order_demo_102', 'pay_demo_102', 'Paid', activeStart, null);
 
-  // Booking 5: Cancelled
-  const b5 = insertBooking.run(cust1Id, vehicleIds[7], futureStart3, futureEnd3, 'day', 5600, 4000, 0, 0, 'Cancelled', now.toISOString()).lastInsertRowid;
-  insertPayment.run(b5, 5600, 'Razorpay', 'order_demo_105', 'pay_demo_105', 'Refunded', now.toISOString());
+  // Booking 3: Confirmed (Online Upcoming)
+  const b3 = insertBooking.run(cust2Id, vehicleIds[6], futureStart1, futureEnd1, 'day', 14400, 7000, 0, 0, 'Confirmed', 'ONLINE', null, now.toISOString()).lastInsertRowid;
+  insertPayment.run(b3, 14400, 'Card', 'order_demo_103', 'pay_demo_103', 'Paid', now.toISOString(), null);
 
-  console.log('  📑 Seeded 5 bookings with payments (Completed, Active, Approved, Pending, Cancelled)');
+  // Booking 4: Confirmed (COD - Cash on Delivery, Payment Pending at Pickup)
+  const b4 = insertBooking.run(cust2Id, luxuryVehicleId, futureStart2, futureEnd2, 'day', 13000, 10000, 1300, 0, 'Confirmed', 'COD', null, now.toISOString()).lastInsertRowid;
+  insertPayment.run(b4, 23000, 'COD', null, null, 'Pending', null, null);
+
+  // Booking 5: Awaiting Payment (Online - 10 min hold slot)
+  const holdExpiry = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+  const b5 = insertBooking.run(cust1Id, vehicleIds[1], futureStart4, futureEnd4, 'day', 4600, 3000, 0, 0, 'Awaiting Payment', 'ONLINE', holdExpiry, now.toISOString()).lastInsertRowid;
+  insertPayment.run(b5, 7600, 'Card', 'order_demo_hold_105', null, 'Pending', null, null);
+
+  // Booking 6: Cancelled
+  const b6 = insertBooking.run(cust1Id, vehicleIds[7], futureStart3, futureEnd3, 'day', 5600, 4000, 0, 0, 'Cancelled', 'ONLINE', null, now.toISOString()).lastInsertRowid;
+  insertPayment.run(b6, 5600, 'Card', 'order_demo_106', 'pay_demo_106', 'Refunded', now.toISOString(), null);
+
+  console.log('  📑 Seeded realistic bookings with payments (Completed, Active, Confirmed, COD Pending, Awaiting Payment, Cancelled)');
 
   // 6. Seed Review for the Completed Booking
   const insertReview = db.prepare(`

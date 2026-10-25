@@ -137,7 +137,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPI Cards Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-600">
             <span className="text-xs font-semibold">Total Revenue</span>
@@ -151,6 +151,21 @@ export default function AdminDashboard() {
           <div className="text-[11px] text-emerald-600 font-semibold flex items-center space-x-1">
             <ArrowUpRight className="w-3.5 h-3.5" />
             <span>+14.2% from prior period</span>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl border border-amber-200 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-slate-600">
+            <span className="text-xs font-semibold">Pending COD Collection</span>
+            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-3xl font-extrabold text-amber-600 font-display">
+            {formatCurrency(kpis.pendingCodCollection || data?.pending_cod_collection || 0)}
+          </div>
+          <div className="text-[11px] text-amber-600 font-semibold">
+            Cash to collect at vehicle pickup
           </div>
         </div>
 

@@ -22,7 +22,9 @@ import {
   ShieldAlert,
   ChevronRight,
   TrendingUp,
-  X
+  X,
+  Banknote,
+  CreditCard
 } from 'lucide-react';
 import {
   LineChart,
@@ -78,6 +80,9 @@ export default function AdminPortal() {
   // ================= 3. BOOKINGS =================
   const [bookings, setBookings] = useState([]);
   const [bookingFilter, setBookingFilter] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('');
+  const [collectCashModal, setCollectCashModal] = useState(null);
+  const [collectingCash, setCollectingCash] = useState(false);
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [selectedBookingForReturn, setSelectedBookingForReturn] = useState(null);
   const [returnDate, setReturnDate] = useState('');
@@ -396,6 +401,22 @@ export default function AdminPortal() {
     }
   };
 
+  const handleConfirmCollectCash = async () => {
+    if (!collectCashModal) return;
+    setCollectingCash(true);
+    try {
+      await api.patch(`/admin/payments/${collectCashModal.payment_id}/collect-cash`);
+      showToast(`Cash collected for Booking #${collectCashModal.booking_id}! Payment marked as Paid.`, 'success');
+      setCollectCashModal(null);
+      loadBookings();
+      loadDashboardData();
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to record cash collection.', 'error');
+    } finally {
+      setCollectingCash(false);
+    }
+  };
+
   // ================= CUSTOMER ACTIONS =================
   const handleToggleBlock = async (id) => {
     try {
@@ -576,7 +597,7 @@ export default function AdminPortal() {
             </div>
 
             {/* Stat Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
               <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Fleet</span>
                 <span className="text-2xl font-black text-white mt-1 block">{stats?.total_vehicles || 0}</span>
@@ -600,6 +621,11 @@ export default function AdminPortal() {
               <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
                 <span className="text-[10px] uppercase font-bold text-violet-400 block">Total Revenue</span>
                 <span className="text-xl font-black text-violet-400 mt-1 block">Rs. {Number(stats?.total_revenue || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="glass-card p-4 rounded-2xl border border-amber-500/40 bg-amber-950/20">
+                <span className="text-[10px] uppercase font-bold text-amber-400 block">Pending COD Collection</span>
+                <span className="text-xl font-black text-amber-400 mt-1 block">Rs. {Number(stats?.pending_cod_collection || 0).toLocaleString('en-IN')}</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">{stats?.pending_cod_count || 0} pending orders</span>
               </div>
             </div>
 
@@ -825,24 +851,49 @@ export default function AdminPortal() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Customer Reservations</h1>
-                <p className="text-xs text-slate-400 mt-1">Approve pending orders, handle rejections, and process return check-ins</p>
+                <p className="text-xs text-slate-400 mt-1">Approve orders, collect COD cash payments, and handle vehicle return check-ins</p>
               </div>
 
-              {/* Status Filter */}
-              <div className="flex gap-2 text-xs">
-                {['', 'Pending', 'Approved', 'Active', 'Completed', 'Cancelled'].map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => setBookingFilter(st)}
-                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                      bookingFilter === st
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-900 text-slate-400 border border-slate-800'
-                    }`}
-                  >
-                    {st || 'All'}
-                  </button>
-                ))}
+              {/* Status & Payment Filters */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                {/* Status Filter */}
+                <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  {['', 'Confirmed', 'Pending', 'Approved', 'Active', 'Completed', 'Cancelled'].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setBookingFilter(st)}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all text-[11px] ${
+                        bookingFilter === st
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {st || 'All Status'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Payment Filter */}
+                <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  {[
+                    { label: 'All Payments', val: '' },
+                    { label: 'COD', val: 'COD' },
+                    { label: 'Online', val: 'Online' },
+                    { label: 'Pending Cash', val: 'Pending Cash' },
+                  ].map((pf) => (
+                    <button
+                      key={pf.val}
+                      onClick={() => setPaymentFilter(pf.val)}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all text-[11px] ${
+                        paymentFilter === pf.val
+                          ? 'bg-amber-600 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {pf.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -856,14 +907,23 @@ export default function AdminPortal() {
                       <th className="py-3 px-4">Customer</th>
                       <th className="py-3 px-4">Vehicle</th>
                       <th className="py-3 px-4">Schedule</th>
-                      <th className="py-3 px-4">Total Paid</th>
+                      <th className="py-3 px-4">Total Amount</th>
                       <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Payment Method</th>
+                      <th className="py-3 px-4">Payment Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
                     {bookings
-                      .filter((b) => !bookingFilter || b.status === bookingFilter)
+                      .filter((b) => {
+                        const statusMatch = !bookingFilter || b.status === bookingFilter;
+                        if (!statusMatch) return false;
+                        if (paymentFilter === 'COD') return b.payment_method === 'COD';
+                        if (paymentFilter === 'Online') return b.payment_method === 'ONLINE';
+                        if (paymentFilter === 'Pending Cash') return b.payment_method === 'COD' && b.payment_status === 'Pending';
+                        return true;
+                      })
                       .map((b) => (
                         <tr key={b.booking_id} className="hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-4 font-mono font-bold text-white">#{b.booking_id}</td>
@@ -884,6 +944,8 @@ export default function AdminPortal() {
                               className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                 b.status === 'Completed'
                                   ? 'bg-emerald-950 text-emerald-300 border-emerald-600/40'
+                                  : b.status === 'Confirmed'
+                                  ? 'bg-teal-950 text-teal-300 border-teal-600/40'
                                   : b.status === 'Approved' || b.status === 'Active'
                                   ? 'bg-indigo-950 text-indigo-300 border-indigo-600/40'
                                   : b.status === 'Pending'
@@ -894,8 +956,43 @@ export default function AdminPortal() {
                               {b.status}
                             </span>
                           </td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              b.payment_method === 'COD'
+                                ? 'bg-amber-950/80 text-amber-300 border-amber-700/50'
+                                : 'bg-indigo-950/80 text-indigo-300 border-indigo-700/50'
+                            }`}>
+                              {b.payment_method === 'COD' ? <Banknote className="w-3 h-3 text-amber-400" /> : <CreditCard className="w-3 h-3 text-indigo-400" />}
+                              <span>{b.payment_method === 'COD' ? 'COD' : 'Online'}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              b.payment_status === 'Paid'
+                                ? 'bg-emerald-950 text-emerald-300 border-emerald-600/40'
+                                : b.payment_status === 'Pending'
+                                ? 'bg-amber-950 text-amber-300 border-amber-600/40'
+                                : b.payment_status === 'Refunded'
+                                ? 'bg-slate-900 text-slate-300 border-slate-700'
+                                : 'bg-rose-950 text-rose-300 border-rose-600/40'
+                            }`}>
+                              {b.payment_status || 'Pending'}
+                            </span>
+                          </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end space-x-2">
+                              {/* Mark Cash Received Button for Pending COD */}
+                              {b.payment_method === 'COD' && b.payment_status === 'Pending' && (
+                                <button
+                                  onClick={() => setCollectCashModal(b)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center space-x-1 shadow-md shadow-emerald-600/20"
+                                  title="Mark Cash Received from Customer"
+                                >
+                                  <Banknote className="w-3.5 h-3.5" />
+                                  <span>Mark Cash Received</span>
+                                </button>
+                              )}
+
                               {b.status === 'Pending' && (
                                 <>
                                   <button
@@ -913,7 +1010,7 @@ export default function AdminPortal() {
                                 </>
                               )}
 
-                              {(b.status === 'Approved' || b.status === 'Active') && (
+                              {(b.status === 'Approved' || b.status === 'Active' || b.status === 'Confirmed') && (
                                 <button
                                   onClick={() => openReturnModal(b)}
                                   className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px]"
@@ -1998,6 +2095,73 @@ export default function AdminPortal() {
                   Activate Coupon
                 </button>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* CASH COLLECTION CONFIRMATION MODAL */}
+        {collectCashModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+            <div className="max-w-md w-full glass-card p-6 sm:p-8 rounded-3xl border border-emerald-500/30 bg-slate-900 shadow-2xl space-y-6">
+              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold">
+                    <Banknote className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Record Cash Received</h3>
+                    <span className="text-[10px] text-slate-400">Booking #{collectCashModal.booking_id}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCollectCashModal(null)}
+                  className="text-slate-400 hover:text-white text-xs"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>Customer:</span>
+                  <span className="text-white font-bold">{collectCashModal.customer_name}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Vehicle:</span>
+                  <span className="text-slate-200">{collectCashModal.vehicle_brand} {collectCashModal.vehicle_name}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Cash Amount to Collect:</span>
+                  <span className="text-emerald-400 font-black text-sm">
+                    Rs. {(collectCashModal.total_amount + (collectCashModal.deposit_amount || 0)).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Includes:</span>
+                  <span className="text-slate-300">Rental + Security Deposit</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={handleConfirmCollectCash}
+                  disabled={collectingCash}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{collectingCash ? 'Recording...' : 'Confirm Cash Received'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCollectCashModal(null)}
+                  disabled={collectingCash}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -54,19 +54,52 @@ function runDailyFleetInspection() {
   }
 }
 
+function checkAndCancelExpiredHolds() {
+  try {
+    const expiredBookings = db.prepare(`
+      SELECT booking_id, vehicle_id, user_id, hold_expires_at
+      FROM bookings
+      WHERE status = 'Awaiting Payment'
+        AND hold_expires_at IS NOT NULL
+        AND datetime(hold_expires_at) <= datetime('now')
+    `).all();
+
+    if (expiredBookings.length > 0) {
+      console.log(`⏱️ [CRON] Found ${expiredBookings.length} expired 'Awaiting Payment' booking hold(s). Auto-cancelling...`);
+      for (const b of expiredBookings) {
+        db.transaction(() => {
+          db.prepare("UPDATE bookings SET status = 'Cancelled' WHERE booking_id = ?").run(b.booking_id);
+          db.prepare("UPDATE payments SET payment_status = 'Failed' WHERE booking_id = ? AND payment_status = 'Pending'").run(b.booking_id);
+          db.prepare("UPDATE vehicles SET status = 'Available' WHERE vehicle_id = ?").run(b.vehicle_id);
+        })();
+        console.log(`   ✅ Booking #${b.booking_id} cancelled & vehicle #${b.vehicle_id} slot freed.`);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error executing hold expiration cron:', err.message);
+  }
+}
+
 function initCronJobs() {
   // Run once on server startup
   runDailyFleetInspection();
+  checkAndCancelExpiredHolds();
 
   // Schedule daily at 00:00 midnight
   cron.schedule('0 0 * * *', () => {
     runDailyFleetInspection();
   });
 
-  console.log('🕒 Node-cron daily fleet inspection scheduled (0 0 * * *).');
+  // Schedule every 1 minute to release expired 10-minute slot holds
+  cron.schedule('* * * * *', () => {
+    checkAndCancelExpiredHolds();
+  });
+
+  console.log('🕒 Node-cron jobs scheduled: daily inspection (0 0 * * *) & slot hold cleanup (* * * * *).');
 }
 
 module.exports = {
   initCronJobs,
-  runDailyFleetInspection
+  runDailyFleetInspection,
+  checkAndCancelExpiredHolds
 };

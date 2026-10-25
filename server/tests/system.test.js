@@ -146,7 +146,7 @@ describe('Vehicle Rental & Fleet Management System - Full Test Suite', () => {
         });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('Schedule conflict');
+      expect(res.body.error).toMatch(/already booked|conflict/i);
     });
   });
 
@@ -176,9 +176,9 @@ describe('Vehicle Rental & Fleet Management System - Full Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
 
-      // Verify status changed to Approved
+      // Verify status changed to Confirmed
       const b = db.prepare('SELECT status FROM bookings WHERE booking_id = ?').get(testBookingId);
-      expect(b.status).toBe('Approved');
+      expect(b.status).toBe('Confirmed');
     });
 
     it('should stream PDF tax invoice for the booking', async () => {

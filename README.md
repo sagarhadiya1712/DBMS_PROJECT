@@ -209,3 +209,84 @@ All **23 integration tests** pass cleanly with 100% coverage across business log
   - You can enter any Google email address or click **"Use 1-Click Demo Google Account"**.
   - Accounts verified through Google are automatically activated (`is_verified = 1`) and can immediately browse and book vehicles without waiting for an OTP.
 
+---
+
+## 💳 Checkout Payment System: Online (Razorpay) & Cash on Delivery (COD)
+
+The checkout system provides two flexible payment options with end-to-end database transactions, concurrency guards, and abuse protection:
+
+### 1. 💵 Cash on Delivery (Pay at Pickup)
+- **Instant Booking Confirmation**: When COD is selected, the booking is created immediately in **`Confirmed`** status with an accompanying payment record (`method = 'COD'`, `payment_status = 'Pending'`). No payment gateway popup is displayed.
+- **Pay at Handover**: The full amount due (base rental charge + refundable security deposit) is collected in cash at the time of vehicle pickup or doorstep delivery.
+- **Abuse Prevention Guards**:
+  - **Verified Users Only**: COD is restricted to accounts with `is_verified = 1`. Unverified users are rejected with `403 Forbidden`.
+  - **Max 2 Active COD Bookings**: A customer can have at most **2 active COD bookings** (`status IN ('Confirmed', 'Active')` and `payment_status = 'Pending'`). Attempting a 3rd booking returns a clean error: *"COD limit exceeded. You can have at most 2 active Cash on Delivery bookings. Please complete or pay for existing bookings, or choose Online Payment."*
+- **Admin Cash Collection**:
+  - In Admin Portal > Bookings, COD orders display a **"Mark Cash Received"** button.
+  - Clicking opens a confirmation modal and triggers `PATCH /api/admin/payments/:id/collect-cash`, setting `payment_status = 'Paid'`, `paid_at = now`, and `collected_by = admin_id`.
+  - The collected cash immediately reflects in total revenue reports.
+
+### 2. 💳 Online Payment (Razorpay Test Mode)
+- **10-Minute Reservation Hold**:
+  - Selecting Online Payment creates the booking in **`Awaiting Payment`** status with `hold_expires_at = datetime('now', '+10 minutes')`.
+  - The vehicle slot is locked, preventing anyone else from double-booking those dates during the 10-minute payment window.
+- **Signature Verification & Idempotency**:
+  - Upon successful test card/UPI payment in the Razorpay checkout modal, the frontend calls `POST /api/payments/verify` with `razorpay_order_id`, `razorpay_payment_id`, and `razorpay_signature`.
+  - The backend validates the HMAC-SHA256 signature using `crypto.createHmac('sha256', secret)`.
+  - Once verified, a database transaction sets `payments.payment_status = 'Paid'` (`paid_at = now`) and `bookings.status = 'Confirmed'`.
+  - The endpoint is **idempotent**: duplicate verification requests return success without re-updating.
+- **Payment Failure & Retry**:
+  - If the user closes the Razorpay modal or the payment fails, the booking remains in `Awaiting Payment`.
+  - A live 10-minute countdown timer displays on both Checkout and My Bookings.
+  - The user can click **"Try Again"** (`POST /api/payments/:bookingId/retry`) to re-open the payment gateway before the hold expires.
+- **Automated Hold Expiry Worker (`node-cron`)**:
+  - A background cron job runs every **1 minute** (`* * * * *`).
+  - Any booking with `status = 'Awaiting Payment'` and `hold_expires_at < datetime('now')` is automatically marked **`Cancelled`**, and its payment row is marked **`Failed`**.
+  - The vehicle slot is instantly released back to the fleet for other customers.
+
+### 3. 🛡️ Concurrency & Zero Double-Booking Lock
+- Every booking creation executes inside an isolated SQLite transaction (`db.transaction()`).
+- Overlap detection checks existing bookings for conflicting date ranges, blocking any overlap with:
+  - `status IN ('Confirmed', 'Approved', 'Active')`
+  - `status = 'Awaiting Payment' AND hold_expires_at > datetime('now')`
+- Conflicting booking attempts are rejected with **`409 Conflict`**: *"Vehicle already booked for these dates."*
+
+### 4. 🧾 Refund Policy
+- **Cancelled Online Paid Bookings**: Marked as `payment_status = 'Refunded'`. In production, this links to Razorpay automatic refund API.
+- **Cancelled COD Bookings**: Marked as `payment_status = 'Failed'` / cancelled. No cash transaction took place.
+- **Official Invoices**: Tax invoice PDFs generated via `/api/payments/invoice/:id` display whether payment was made via Razorpay (`Paid Online`) or COD (`COD - Pay at Pickup: Pending / Collected by Admin`).
+
+---
+
+## 🗄️ Database Migration (`db:migrate`)
+
+A non-destructive migration script safely updates SQLite tables without data loss:
+```bash
+cd server
+npm run db:migrate
+```
+- Automatically creates a pre-migration backup at `/server/db/rental.backup.db`.
+- Safely rebuilds `bookings` and `payments` tables with new CHECK constraints (`payment_method IN ('ONLINE', 'COD')`, `hold_expires_at`, `collected_by`).
+- Preserves 100% of existing rows across `users`, `vehicles`, `bookings`, `payments`, and `email_otps`.
+- Creates composite index `idx_bookings_hold` on `bookings(status, hold_expires_at)` for high-speed cron lookups.
+
+---
+
+## 🧪 Comprehensive Verification Suite
+
+Run the automated verification script testing all 9 requirements with live SQLite `SELECT` query printouts:
+```bash
+cd server
+node tests/verify_payment_methods.js
+```
+**Test Coverage (All 9 Steps Passed)**:
+1. Migration integrity & table row preservation.
+2. COD booking instant confirmation (`Confirmed` status, `COD` + `Pending` payment).
+3. Online booking flow (`Awaiting Payment` hold → Razorpay verification → `Confirmed` + `Paid`).
+4. Online payment failure rejection (tampered signature → `Cancelled` booking, `Failed` payment).
+5. 10-minute hold expiry cron (auto-cancels expired hold & frees vehicle slot).
+6. Double booking prevention (conflicting dates return `409 Conflict`).
+7. COD abuse limit enforcement (3rd active COD booking rejected with `400 Bad Request`).
+8. Admin "Mark Cash Received" (updates `payment_status = 'Paid'`, updates revenue reports).
+9. SELECT queries printed for recent bookings and payments.
+

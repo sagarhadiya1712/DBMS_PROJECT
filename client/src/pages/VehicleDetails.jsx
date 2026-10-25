@@ -156,7 +156,7 @@ export default function VehicleDetails() {
 
   const estimate = calculateEstimate();
 
-  const handleProceedToBooking = async () => {
+  const handleProceedToBooking = () => {
     if (!user) {
       showToast('Please sign in or create an account to book this vehicle.', 'info');
       navigate('/login', { state: { from: { pathname: `/vehicles/${id}` } } });
@@ -168,27 +168,21 @@ export default function VehicleDetails() {
       return;
     }
 
-    setBookingLoading(true);
-
-    try {
-      // Create pending booking on server
-      const res = await api.post('/bookings', {
-        vehicle_id: vehicle.vehicle_id,
-        start_datetime: new Date(startDateTime).toISOString(),
-        end_datetime: new Date(endDateTime).toISOString(),
-        pricing_type: pricingType,
-        discount_code: appliedDiscount?.code || null,
-        estimated_km: pricingType === 'km' ? Number(estimatedKm) : undefined
-      });
-
-      const booking = res.data;
-      showToast('Reservation initialized! Proceeding to test payment.', 'success');
-      navigate('/checkout', { state: { booking, vehicle } });
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to initialize booking.', 'error');
-    } finally {
-      setBookingLoading(false);
-    }
+    const calculated = calculateEstimate();
+    navigate('/checkout', {
+      state: {
+        vehicle,
+        bookingParams: {
+          vehicle_id: vehicle.vehicle_id,
+          start_datetime: new Date(startDateTime).toISOString(),
+          end_datetime: new Date(endDateTime).toISOString(),
+          pricing_type: pricingType,
+          discount_code: appliedDiscount?.code || null,
+          estimated_km: pricingType === 'km' ? Number(estimatedKm) : undefined
+        },
+        estimate: calculated
+      }
+    });
   };
 
   if (loading) {

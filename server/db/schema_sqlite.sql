@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS bookings (
     deposit_amount REAL DEFAULT 0,
     discount_amount REAL DEFAULT 0,
     late_fee REAL DEFAULT 0,
-    status TEXT CHECK(status IN ('Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Cancelled')) DEFAULT 'Pending',
+    status TEXT CHECK(status IN ('Awaiting Payment', 'Confirmed', 'Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Cancelled')) DEFAULT 'Awaiting Payment',
+    payment_method TEXT NOT NULL DEFAULT 'ONLINE' CHECK(payment_method IN ('ONLINE', 'COD')),
+    hold_expires_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -68,12 +70,17 @@ CREATE TABLE IF NOT EXISTS payments (
     payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_id INTEGER NOT NULL REFERENCES bookings(booking_id) ON DELETE CASCADE,
     amount REAL NOT NULL,
-    method TEXT DEFAULT 'Razorpay',
+    method TEXT CHECK(method IN ('UPI', 'Card', 'NetBanking', 'Wallet', 'COD', 'Razorpay')) DEFAULT 'Card',
     razorpay_order_id TEXT,
     razorpay_payment_id TEXT,
     payment_status TEXT CHECK(payment_status IN ('Pending', 'Paid', 'Failed', 'Refunded')) DEFAULT 'Pending',
-    paid_at DATETIME
+    paid_at DATETIME,
+    collected_by INTEGER REFERENCES users(user_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_bookings_status_hold ON bookings(status, hold_expires_at);
+CREATE INDEX IF NOT EXISTS idx_bookings_user_cod ON bookings(user_id, payment_method, status);
+CREATE INDEX IF NOT EXISTS idx_payments_method_status ON payments(method, payment_status);
 
 -- 6. Maintenance records table
 CREATE TABLE IF NOT EXISTS maintenance (

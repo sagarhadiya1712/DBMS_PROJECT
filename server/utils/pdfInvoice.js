@@ -93,20 +93,29 @@ function generateInvoicePDF(bookingData, res) {
 
   // Grand Total
   doc.rect(40, y, doc.page.width - 80, 28).fill('#f8fafc');
+  const isCod = bookingData.payment_method === 'COD';
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(12)
-    .text('GRAND TOTAL PAID', 50, y + 8)
+    .text(isCod && bookingData.payment_status === 'Pending' ? 'AMOUNT DUE AT PICKUP' : 'GRAND TOTAL PAID', 50, y + 8)
     .text(`Rs. ${(bookingData.total_amount + (bookingData.deposit_amount || 0)).toFixed(2)}`, 420, y + 8, { align: 'right' });
 
   y += 45;
 
   // Payment Metadata
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text('Payment Record:', 50, y);
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text('Payment Record & Authentication:', 50, y);
   y += 16;
-  doc.fontSize(9).font('Helvetica').fillColor('#475569')
-    .text(`Payment Gateway: Razorpay (Test Mode)`, 50, y)
-    .text(`Status: ${bookingData.payment_status || 'Paid'}`, 50, y + 14)
-    .text(`Razorpay Payment ID: ${bookingData.razorpay_payment_id || 'pay_test_' + bookingData.booking_id}`, 50, y + 28)
-    .text(`Booking Status: ${bookingData.status}`, 50, y + 42);
+  if (isCod) {
+    doc.fontSize(9).font('Helvetica').fillColor('#475569')
+      .text(`Payment Option: Cash on Delivery (Pay at Pickup / Delivery)`, 50, y)
+      .text(`Payment Status: ${bookingData.payment_status === 'Paid' ? 'Paid (Cash Collected)' : 'Pending (Cash to be paid at vehicle pickup)'}`, 50, y + 14)
+      .text(`Amount to Collect: Rs. ${(bookingData.total_amount + (bookingData.deposit_amount || 0)).toFixed(2)} (Rent + Refundable Deposit)`, 50, y + 28)
+      .text(`Booking Status: ${bookingData.status}`, 50, y + 42);
+  } else {
+    doc.fontSize(9).font('Helvetica').fillColor('#475569')
+      .text(`Payment Option: Paid Online via Razorpay`, 50, y)
+      .text(`Payment Status: ${bookingData.payment_status || 'Paid'}`, 50, y + 14)
+      .text(`Razorpay Payment ID: ${bookingData.razorpay_payment_id || 'pay_test_' + bookingData.booking_id}`, 50, y + 28)
+      .text(`Booking Status: ${bookingData.status}`, 50, y + 42);
+  }
 
   // Footer notes
   const footerY = doc.page.height - 70;

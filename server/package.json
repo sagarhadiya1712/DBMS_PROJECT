@@ -9,6 +9,7 @@
     "dev": "nodemon server.js",
     "db:init": "node db/init.js",
     "db:seed": "node db/seed.js",
+    "db:migrate": "node db/migrate_payment_methods.js",
     "test": "jest --runInBand --detectOpenHandles"
   },
   "dependencies": {

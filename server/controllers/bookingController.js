@@ -1,11 +1,13 @@
 const { z } = require('zod');
 const db = require('../db/db');
+const { createRazorpayOrder } = require('../utils/razorpay');
 
 const createBookingSchema = z.object({
   vehicle_id: z.coerce.number().int().positive(),
   start_datetime: z.string().datetime(),
   end_datetime: z.string().datetime(),
   pricing_type: z.enum(['day', 'hour', 'km']).default('day'),
+  payment_method: z.enum(['ONLINE', 'COD']).default('ONLINE'),
   discount_code: z.string().optional().nullable(),
   estimated_km: z.coerce.number().optional()
 });
@@ -16,6 +18,37 @@ async function createBooking(req, res, next) {
     const data = createBookingSchema.parse(req.body);
     const userId = req.user.user_id;
 
+    // Check user verification
+    const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // COD Abuse Prevention: Verified users only & max 2 active COD bookings
+    if (data.payment_method === 'COD') {
+      if (!user.is_verified) {
+        return res.status(403).json({
+          error: 'Cash on Delivery is available for verified accounts only. Please verify your email first.'
+        });
+      }
+
+      const activeCodCount = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM bookings b
+        JOIN payments p ON b.booking_id = p.booking_id
+        WHERE b.user_id = ?
+          AND b.payment_method = 'COD'
+          AND b.status IN ('Confirmed', 'Active')
+          AND p.payment_status = 'Pending'
+      `).get(userId).count;
+
+      if (activeCodCount >= 2) {
+        return res.status(400).json({
+          error: 'COD limit exceeded. You can have at most 2 active Cash on Delivery bookings. Please complete or pay for existing bookings, or choose Online Payment.'
+        });
+      }
+    }
+
     const start = new Date(data.start_datetime);
     const end = new Date(data.end_datetime);
 
@@ -23,121 +56,210 @@ async function createBooking(req, res, next) {
       return res.status(400).json({ error: 'End date/time must be strictly after start date/time.' });
     }
 
-    // Begin DB transaction to ensure atomic double-booking check & booking creation
-    const transaction = db.transaction(() => {
-      // 1. Fetch vehicle
-      const vehicle = db.prepare('SELECT * FROM vehicles WHERE vehicle_id = ?').get(data.vehicle_id);
-      if (!vehicle) {
-        throw new Error('Vehicle not found.');
+    // 1. Fetch vehicle
+    const vehicle = db.prepare('SELECT * FROM vehicles WHERE vehicle_id = ?').get(data.vehicle_id);
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found.' });
+    }
+
+    if (vehicle.status === 'In Service') {
+      return res.status(400).json({ error: 'This vehicle is currently undergoing maintenance and is not available for rental.' });
+    }
+
+    // 2. Strict Overlap Check (Zero Double-Booking Guard)
+    // Conflicting if existing booking starts before new one ends AND ends after new one starts
+    // Count active holds (Awaiting Payment where hold_expires_at > now), Confirmed, Approved, Active
+    const overlapQuery = `
+      SELECT booking_id, start_datetime, end_datetime, status, hold_expires_at
+      FROM bookings
+      WHERE vehicle_id = ?
+        AND (
+          status IN ('Confirmed', 'Approved', 'Active')
+          OR (status = 'Awaiting Payment' AND datetime(hold_expires_at) > datetime('now'))
+        )
+        AND NOT (datetime(end_datetime) <= datetime(?) OR datetime(start_datetime) >= datetime(?))
+    `;
+    const conflict = db.prepare(overlapQuery).get(
+      data.vehicle_id,
+      data.start_datetime,
+      data.end_datetime
+    );
+
+    if (conflict) {
+      return res.status(409).json({
+        error: 'Vehicle already booked for these dates.'
+      });
+    }
+
+    // 3. Strict Server-Side Pricing Calculation
+    const diffMs = end.getTime() - start.getTime();
+    let baseAmount = 0;
+
+    if (data.pricing_type === 'hour') {
+      const hours = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60)));
+      baseAmount = hours * vehicle.price_per_hour;
+    } else if (data.pricing_type === 'km') {
+      const km = Number(data.estimated_km) || 100;
+      baseAmount = km * vehicle.price_per_km;
+    } else {
+      // 'day'
+      const days = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+      baseAmount = days * vehicle.price_per_day;
+    }
+
+    // 4. Validate Discount Code
+    let discountAmount = 0;
+    if (data.discount_code) {
+      const cleanCode = data.discount_code.trim().toUpperCase();
+      const discount = db.prepare(`
+        SELECT * FROM discounts
+        WHERE code = ? AND active = 1
+          AND (valid_from IS NULL OR valid_from <= date('now'))
+          AND (valid_to IS NULL OR valid_to >= date('now'))
+      `).get(cleanCode);
+
+      if (discount) {
+        discountAmount = Math.round((baseAmount * discount.percent) / 100);
       }
+    }
 
-      if (vehicle.status === 'In Service') {
-        throw new Error('This vehicle is currently undergoing maintenance and is not available for rental.');
-      }
+    const totalAmount = Math.max(0, baseAmount - discountAmount);
+    const depositAmount = vehicle.security_deposit || 0;
+    const payableAmount = totalAmount + depositAmount;
 
-      // 2. Strict Overlap Check (Zero Double-Booking Guard)
-      // Conflicting if existing booking starts before new one ends AND ends after new one starts
-      const overlapQuery = `
-        SELECT booking_id, start_datetime, end_datetime, status
-        FROM bookings
-        WHERE vehicle_id = ?
-          AND status IN ('Pending', 'Approved', 'Active')
-          AND NOT (end_datetime <= ? OR start_datetime >= ?)
-      `;
-      const conflict = db.prepare(overlapQuery).get(
-        data.vehicle_id,
-        data.start_datetime,
-        data.end_datetime
-      );
+    // 5. Handle Booking & Payment based on chosen method
+    if (data.payment_method === 'COD') {
+      // COD Flow: Instant Confirmed booking, Payment status 'Pending'
+      const transaction = db.transaction(() => {
+        const insertBooking = db.prepare(`
+          INSERT INTO bookings (
+            user_id, vehicle_id, start_datetime, end_datetime,
+            pricing_type, total_amount, deposit_amount, discount_amount, late_fee,
+            status, payment_method, hold_expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'Confirmed', 'COD', NULL)
+        `);
 
-      if (conflict) {
-        const err = new Error(
-          `Schedule conflict: Vehicle is already reserved from ${conflict.start_datetime} to ${conflict.end_datetime}. Please select different dates.`
+        const bookingResult = insertBooking.run(
+          userId,
+          vehicle.vehicle_id,
+          data.start_datetime,
+          data.end_datetime,
+          data.pricing_type,
+          totalAmount,
+          depositAmount,
+          discountAmount
         );
-        err.statusCode = 409;
-        throw err;
-      }
 
-      // 3. Auto-calculate pricing
-      const diffMs = end.getTime() - start.getTime();
-      let baseAmount = 0;
+        const bookingId = bookingResult.lastInsertRowid;
 
-      if (data.pricing_type === 'hour') {
-        const hours = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60)));
-        baseAmount = hours * vehicle.price_per_hour;
-      } else if (data.pricing_type === 'km') {
-        const km = Number(data.estimated_km) || 100;
-        baseAmount = km * vehicle.price_per_km;
-      } else {
-        // 'day'
-        const days = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-        baseAmount = days * vehicle.price_per_day;
-      }
+        // Create pending COD payment record
+        db.prepare(`
+          INSERT INTO payments (booking_id, amount, method, payment_status)
+          VALUES (?, ?, 'COD', 'Pending')
+        `).run(bookingId, payableAmount);
 
-      // 4. Validate Discount Code
-      let discountAmount = 0;
-      if (data.discount_code) {
-        const cleanCode = data.discount_code.trim().toUpperCase();
-        const discount = db.prepare(`
-          SELECT * FROM discounts
-          WHERE code = ? AND active = 1
-            AND (valid_from IS NULL OR valid_from <= date('now'))
-            AND (valid_to IS NULL OR valid_to >= date('now'))
-        `).get(cleanCode);
+        // Mark vehicle as rented/reserved
+        db.prepare("UPDATE vehicles SET status = 'Rented' WHERE vehicle_id = ?").run(vehicle.vehicle_id);
 
-        if (discount) {
-          discountAmount = Math.round((baseAmount * discount.percent) / 100);
-        }
-      }
+        return {
+          booking_id: bookingId,
+          user_id: userId,
+          vehicle_id: vehicle.vehicle_id,
+          vehicle_name: `${vehicle.brand} ${vehicle.name}`,
+          start_datetime: data.start_datetime,
+          end_datetime: data.end_datetime,
+          pricing_type: data.pricing_type,
+          base_amount: baseAmount,
+          discount_amount: discountAmount,
+          deposit_amount: depositAmount,
+          total_amount: totalAmount,
+          payable_amount: payableAmount,
+          status: 'Confirmed',
+          payment_method: 'COD'
+        };
+      });
 
-      const totalAmount = Math.max(0, baseAmount - discountAmount);
-      const depositAmount = vehicle.security_deposit || 0;
+      const newBooking = transaction();
+      return res.status(201).json({
+        ...newBooking,
+        booking: newBooking,
+        payment_method: 'COD',
+        amount_due_at_pickup: payableAmount,
+        message: 'Booking confirmed. Cash pickup par dena hai.'
+      });
+    } else {
+      // ONLINE Flow: Initial 'Awaiting Payment' status with 10-minute hold
+      const holdExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-      // 5. Insert Booking
-      const insertBooking = db.prepare(`
-        INSERT INTO bookings (
-          user_id, vehicle_id, start_datetime, end_datetime,
-          pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'Pending')
-      `);
+      // Create Razorpay Order
+      const rzpOrder = await createRazorpayOrder({
+        amount: payableAmount,
+        receipt: `b_${Date.now()}`,
+        notes: { user_id: userId, vehicle_id: vehicle.vehicle_id }
+      });
 
-      const bookingResult = insertBooking.run(
-        userId,
-        vehicle.vehicle_id,
-        data.start_datetime,
-        data.end_datetime,
-        data.pricing_type,
-        totalAmount,
-        depositAmount,
-        discountAmount
-      );
+      const transaction = db.transaction(() => {
+        const insertBooking = db.prepare(`
+          INSERT INTO bookings (
+            user_id, vehicle_id, start_datetime, end_datetime,
+            pricing_type, total_amount, deposit_amount, discount_amount, late_fee,
+            status, payment_method, hold_expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'Awaiting Payment', 'ONLINE', ?)
+        `);
 
-      const bookingId = bookingResult.lastInsertRowid;
+        const bookingResult = insertBooking.run(
+          userId,
+          vehicle.vehicle_id,
+          data.start_datetime,
+          data.end_datetime,
+          data.pricing_type,
+          totalAmount,
+          depositAmount,
+          discountAmount,
+          holdExpiresAt
+        );
 
-      // Create associated pending payment record
-      db.prepare(`
-        INSERT INTO payments (booking_id, amount, method, payment_status)
-        VALUES (?, ?, 'Razorpay', 'Pending')
-      `).run(bookingId, totalAmount);
+        const bookingId = bookingResult.lastInsertRowid;
 
-      return {
-        booking_id: bookingId,
-        user_id: userId,
-        vehicle_id: vehicle.vehicle_id,
-        vehicle_name: `${vehicle.brand} ${vehicle.name}`,
-        start_datetime: data.start_datetime,
-        end_datetime: data.end_datetime,
-        pricing_type: data.pricing_type,
-        base_amount: baseAmount,
-        discount_amount: discountAmount,
-        deposit_amount: depositAmount,
-        total_amount: totalAmount,
-        status: 'Pending'
-      };
-    });
+        // Create pending Online payment record linked to Razorpay order
+        db.prepare(`
+          INSERT INTO payments (booking_id, amount, method, razorpay_order_id, payment_status)
+          VALUES (?, ?, 'Card', ?, 'Pending')
+        `).run(bookingId, payableAmount, rzpOrder.id);
 
-    const newBooking = transaction();
-    res.status(201).json(newBooking);
+        return {
+          booking_id: bookingId,
+          user_id: userId,
+          vehicle_id: vehicle.vehicle_id,
+          vehicle_name: `${vehicle.brand} ${vehicle.name}`,
+          start_datetime: data.start_datetime,
+          end_datetime: data.end_datetime,
+          pricing_type: data.pricing_type,
+          base_amount: baseAmount,
+          discount_amount: discountAmount,
+          deposit_amount: depositAmount,
+          total_amount: totalAmount,
+          payable_amount: payableAmount,
+          status: 'Awaiting Payment',
+          payment_method: 'ONLINE',
+          hold_expires_at: holdExpiresAt
+        };
+      });
+
+      const newBooking = transaction();
+      return res.status(201).json({
+        ...newBooking,
+        booking: newBooking,
+        payment_method: 'ONLINE',
+        order_id: rzpOrder.id,
+        razorpay_order_id: rzpOrder.id,
+        amount: payableAmount,
+        currency: rzpOrder.currency || 'INR',
+        key_id: rzpOrder.key_id,
+        hold_expires_at: holdExpiresAt,
+        message: 'Slot held for 10 minutes. Please complete payment to confirm booking.'
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -157,9 +279,13 @@ function getMyBookings(req, res, next) {
         v.fuel_type,
         v.is_chauffeur_driven,
         p.payment_id,
+        p.method AS payment_method_name,
         p.payment_status,
+        p.amount AS payment_amount,
         p.razorpay_payment_id,
+        p.razorpay_order_id,
         p.paid_at,
+        p.collected_by,
         r.review_id,
         r.rating AS user_rating,
         r.comment AS user_comment
@@ -202,7 +328,15 @@ function cancelBooking(req, res, next) {
 
     db.transaction(() => {
       db.prepare("UPDATE bookings SET status = 'Cancelled' WHERE booking_id = ?").run(id);
-      db.prepare("UPDATE payments SET payment_status = 'Refunded' WHERE booking_id = ? AND payment_status = 'Paid'").run(id);
+
+      if (booking.payment_method === 'COD') {
+        db.prepare("UPDATE payments SET payment_status = 'Failed' WHERE booking_id = ? AND payment_status = 'Pending'").run(id);
+      } else {
+        // ONLINE: If paid, mark Refunded; if pending, mark Failed
+        db.prepare("UPDATE payments SET payment_status = 'Refunded' WHERE booking_id = ? AND payment_status = 'Paid'").run(id);
+        db.prepare("UPDATE payments SET payment_status = 'Failed' WHERE booking_id = ? AND payment_status = 'Pending'").run(id);
+      }
+
       db.prepare("UPDATE vehicles SET status = 'Available' WHERE vehicle_id = ?").run(booking.vehicle_id);
     })();
 
@@ -216,7 +350,7 @@ function cancelBooking(req, res, next) {
 // GET /api/bookings (Admin: list all bookings)
 function getAllBookings(req, res, next) {
   try {
-    const { status, vehicle_id } = req.query;
+    const { status, vehicle_id, payment_method, payment_status } = req.query;
     let query = `
       SELECT b.*,
         u.name AS customer_name,
@@ -226,8 +360,14 @@ function getAllBookings(req, res, next) {
         v.brand AS vehicle_brand,
         v.category AS vehicle_category,
         v.image_url AS vehicle_image,
+        p.payment_id,
+        p.method AS payment_method_name,
         p.payment_status,
-        p.razorpay_payment_id
+        p.amount AS payment_amount,
+        p.razorpay_payment_id,
+        p.razorpay_order_id,
+        p.paid_at,
+        p.collected_by
       FROM bookings b
       JOIN users u ON b.user_id = u.user_id
       JOIN vehicles v ON b.vehicle_id = v.vehicle_id
@@ -243,6 +383,14 @@ function getAllBookings(req, res, next) {
     if (vehicle_id) {
       query += ' AND b.vehicle_id = ?';
       params.push(vehicle_id);
+    }
+    if (payment_method) {
+      query += ' AND b.payment_method = ?';
+      params.push(payment_method);
+    }
+    if (payment_status) {
+      query += ' AND p.payment_status = ?';
+      params.push(payment_status);
     }
 
     query += ' ORDER BY b.created_at DESC';

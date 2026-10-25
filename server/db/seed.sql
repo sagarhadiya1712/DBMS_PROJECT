@@ -73,17 +73,31 @@ INSERT INTO discounts (code, percent, valid_from, valid_to, active)
 VALUES ('FLEET20', 20, TO_DATE('2026-01-01', 'YYYY-MM-DD'), TO_DATE('2027-12-31', 'YYYY-MM-DD'), 1);
 
 -- 5. Bookings & Payments
-INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status)
-VALUES (2, 1, SYSDATE - 10, SYSDATE - 7, 'day', 5400, 3000, 0, 0, 'Completed');
+INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status, payment_method, hold_expires_at)
+VALUES (2, 1, SYSDATE - 10, SYSDATE - 7, 'day', 5400, 3000, 0, 0, 'Completed', 'ONLINE', NULL);
 
 INSERT INTO payments (booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at)
-VALUES (1, 5400, 'Razorpay', 'order_demo_101', 'pay_demo_101', 'Paid', SYSDATE - 10);
+VALUES (1, 5400, 'Card', 'order_demo_101', 'pay_demo_101', 'Paid', SYSDATE - 10);
 
-INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status)
-VALUES (2, 4, SYSDATE - 1, SYSDATE + 2, 'day', 9600, 5000, 960, 0, 'Active');
+INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status, payment_method, hold_expires_at)
+VALUES (2, 4, SYSDATE - 1, SYSDATE + 2, 'day', 9600, 5000, 960, 0, 'Active', 'ONLINE', NULL);
 
 INSERT INTO payments (booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at)
-VALUES (2, 9600, 'Razorpay', 'order_demo_102', 'pay_demo_102', 'Paid', SYSDATE - 1);
+VALUES (2, 9600, 'Card', 'order_demo_102', 'pay_demo_102', 'Paid', SYSDATE - 1);
+
+-- Sample COD Booking (Confirmed, Payment Pending at Pickup)
+INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status, payment_method, hold_expires_at)
+VALUES (2, 14, SYSDATE + 5, SYSDATE + 7, 'day', 13000, 10000, 0, 0, 'Confirmed', 'COD', NULL);
+
+INSERT INTO payments (booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at)
+VALUES (3, 23000, 'COD', NULL, NULL, 'Pending', NULL);
+
+-- Sample Awaiting Payment Booking (Online 10 min hold)
+INSERT INTO bookings (user_id, vehicle_id, start_datetime, end_datetime, pricing_type, total_amount, deposit_amount, discount_amount, late_fee, status, payment_method, hold_expires_at)
+VALUES (2, 2, SYSDATE + 8, SYSDATE + 10, 'day', 4600, 3000, 0, 0, 'Awaiting Payment', 'ONLINE', SYSDATE + (10/(24*60)));
+
+INSERT INTO payments (booking_id, amount, method, razorpay_order_id, razorpay_payment_id, payment_status, paid_at)
+VALUES (4, 7600, 'Card', 'order_demo_hold_105', NULL, 'Pending', NULL);
 
 -- 6. Reviews
 INSERT INTO reviews (user_id, vehicle_id, booking_id, rating, comment)

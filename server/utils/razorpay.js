@@ -50,17 +50,23 @@ async function createRazorpayOrder({ amount, currency = 'INR', receipt, notes = 
 
 function verifyRazorpaySignature({ order_id, payment_id, signature }) {
   if (!signature) return false;
-  // If simulated mode (no live Razorpay keys configured)
-  if (order_id.startsWith('order_') && (!instance || !key_secret)) {
-    return true;
-  }
 
+  const secret = key_secret || 'test_razorpay_secret_salt_2026';
   const generatedSignature = crypto
-    .createHmac('sha256', key_secret)
+    .createHmac('sha256', secret)
     .update(`${order_id}|${payment_id}`)
     .digest('hex');
 
-  return generatedSignature === signature;
+  if (signature === generatedSignature) {
+    return true;
+  }
+
+  // In test/simulator mode without live keys, allow the specific test token
+  if (!key_secret && signature === 'simulated_valid_signature_2026') {
+    return true;
+  }
+
+  return false;
 }
 
 module.exports = {
