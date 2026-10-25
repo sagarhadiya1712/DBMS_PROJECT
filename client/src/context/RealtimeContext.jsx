@@ -111,8 +111,10 @@ export function RealtimeProvider({ children }) {
       reconnectTimeoutRef.current = null;
     }
 
-    // Build stream URL with optional auth token
-    const streamUrl = `/api/realtime/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    // Build stream URL with optional auth token and base backend URL
+    const rawApiUrl = import.meta.env.VITE_API_URL || '';
+    const backendBase = rawApiUrl ? rawApiUrl.replace(/\/api\/?$/, '') : '';
+    const streamUrl = `${backendBase}/api/realtime/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
     try {
       const es = new EventSource(streamUrl);
