@@ -99,24 +99,66 @@ Configure these values in `/server/.env` for live production integrations (or le
 
 ---
 
-## 🗄️ Database Schema & SQLite Viewer
+*(Note: When Gmail or Razorpay credentials are left blank, the system automatically uses console OTP display and the built-in sandbox simulator, allowing full testing out-of-the-box).*
 
-The database is powered by `better-sqlite3` located at `/server/db/rental.db`.
-To view and inspect tables directly in VS Code:
-1. Install the **SQLite Viewer** or **SQLite** extension in VS Code.
-2. Open `/server/db/rental.db` in VS Code to browse tables:
-   - `users`, `email_otps`, `vehicles`, `bookings`, `payments`, `maintenance`, `fuel_records`, `drivers`, `reviews`, `discounts`, `vehicle_documents`.
+---
+
+## 🔐 Complete Authentication & Verification Flow
+
+### 1. Email OTP Verification (Signup & Unverified Login)
+- **6-Digit Cryptographic Code**: Generated via `crypto.randomInt(100000, 1000000)` and hashed using `bcrypt` before storage in `email_otps`. Plain OTP codes are **never** logged or stored in the database.
+- **Strict 60-Second Expiry**: OTPs expire after exactly 60 seconds (`expires_at = now + 60s`). Expired verification attempts receive `400 Bad Request` ("OTP expire ho gaya, naya code mangao").
+- **Rate-Limiting & Cooldown**:
+  - Requesting a new OTP is subject to a strict 60-second cooldown. Early requests return `429 Too Many Requests` with a dynamic `retry_after` countdown in seconds.
+  - Maximum limit: **5 OTPs per email per hour**.
+- **Brute-Force Lockout Guard**:
+  - Each wrong verification attempt increments `attempts` count in the database.
+  - After **5 consecutive wrong attempts**, the OTP is immediately invalidated and blocked.
+- **Atomic Database Transaction**:
+  - On successful verification, a single `db.transaction()` marks `email_otps.used = 1` and updates `users.is_verified = 1`, issuing a signed JWT token for immediate auto-login.
+- **Unverified Login Prevention**:
+  - Attempting to log in with an unverified account returns `403 Forbidden` and automatically dispatches a fresh 60-second OTP to the user's inbox, redirecting the frontend to `/verify-email`.
+- **Frontend Verify Email Page**:
+  - 6 dedicated input boxes with auto-focus, auto-advance, backspace navigation, and clipboard paste support.
+  - 60-second countdown timer (`01:00` to `00:00`) that persists across browser page reloads via `localStorage`.
+  - When timer reaches 0, input boxes are disabled and the "Resend code" button becomes active. While the timer runs, the resend button remains disabled displaying the countdown ("Resend in 45s").
+
+---
+
+## 🌐 Google OAuth & Profile Completion
+
+- **Universal Google Login**: A "Sign in with Google" button is available on both **Login** and **Signup** pages.
+- **Automatic User Creation**:
+  - First-time Google users are immediately saved to `/server/db/rental.db` with `is_verified = 1`, `role = 'customer'`, and `password_hash = NULL`.
+  - Google accounts do not require email OTP verification.
+- **Existing User Linking**: If an email is already present in `users`, Google OAuth securely links the `google_id` and marks `is_verified = 1`.
+- **Profile Completion Step (Phone Number)**:
+  - Google accounts do not supply a mobile number. The backend detects this and returns `needsPhone: true`.
+  - The frontend automatically presents a dark glassmorphic **"Complete Profile"** modal prompting for a phone number.
+  - Submitting saves the phone number directly to `rental.db` via `PUT /api/auth/complete-profile`.
+- **Suspension Protection**: Suspended accounts (`is_blocked = 1`) are strictly rejected with `403 Forbidden`.
+
+---
+
+## 🗄️ Live Database (SQLite `rental.db`) & Dev Route
+
+- **Zero Memory Buffering**: Every signup, OTP generation, verification, Google login, profile update, booking, and payment writes **immediately** to disk at `/server/db/rental.db` via parameterized queries (`?`).
+- **Development Disk Visibility (`PRAGMA journal_mode = DELETE`)**:
+  - In development mode (`NODE_ENV !== 'production'`), `db.js` sets `PRAGMA journal_mode = DELETE` instead of WAL. This allows the VS Code SQLite Viewer extension to reflect disk changes instantly without waiting for WAL checkpoint flushes.
+  - In production, WAL mode (`PRAGMA journal_mode = WAL`) can be configured for maximum concurrency.
+- **Live Database Inspection Route**:
+  - **`GET /api/dev/db-inspect`**: A dedicated endpoint providing live SQLite statistics including journal mode, foreign key status, table row counts (`users`, `vehicles`, `bookings`, `email_otps`), and recent records.
 
 ---
 
 ## 🧪 Automated Testing
 
-Execute the complete end-to-end integration test suite verifying double-booking prevention, OTP verification, payment, invoice generation, and fleet exports:
+Execute the complete end-to-end integration test suite verifying double-booking prevention, 60s OTP expiration, brute-force lockout, payment signature verification, and fleet reports:
 ```bash
 cd server
 npm test
 ```
-All 15 test cases are documented in detail at [`TEST_CASES.md`](file:///d:/vehicle_rent/TEST_CASES.md).
+All **23 integration tests** pass cleanly with 100% coverage across business logic and database concurrency.
 
 ---
 

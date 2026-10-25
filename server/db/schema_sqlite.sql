@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS email_otps (
     email TEXT NOT NULL,
     otp_hash TEXT NOT NULL,
     expires_at DATETIME NOT NULL,
-    used INTEGER DEFAULT 0
+    used INTEGER DEFAULT 0,
+    attempts INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Vehicles table

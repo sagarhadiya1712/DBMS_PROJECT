@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, ArrowRight, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -13,7 +13,6 @@ export default function VerifyEmail() {
   const emailParam = searchParams.get('email') || '';
   const [email, setEmail] = useState(emailParam);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState('');
@@ -21,14 +20,52 @@ export default function VerifyEmail() {
 
   const inputRefs = useRef([]);
 
-  // Countdown timer
+  // Calculate initial time left from localStorage or default 60s
+  const getInitialTimeLeft = () => {
+    if (!email) return 60;
+    const storedExpiry = localStorage.getItem(`otp_expiry_${email}`);
+    if (storedExpiry) {
+      const remaining = Math.max(0, Math.ceil((Number(storedExpiry) - Date.now()) / 1000));
+      return remaining;
+    }
+    // Set 60-second expiration and persist
+    const newExpiry = Date.now() + 60 * 1000;
+    localStorage.setItem(`otp_expiry_${email}`, String(newExpiry));
+    return 60;
+  };
+
+  const [timeLeft, setTimeLeft] = useState(getInitialTimeLeft);
+
+  // Auto-focus first box on initial mount
   useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => Math.max(0, prev - 1));
+    inputRefs.current[0]?.focus();
+  }, []);
+
+  // Update timer on email change
+  useEffect(() => {
+    if (email) {
+      setTimeLeft(getInitialTimeLeft());
+    }
+  }, [email]);
+
+  // Persistent Countdown Timer (recalculates against target timestamp)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!email) {
+        setTimeLeft((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      const storedExpiry = localStorage.getItem(`otp_expiry_${email}`);
+      if (storedExpiry) {
+        const remaining = Math.max(0, Math.ceil((Number(storedExpiry) - Date.now()) / 1000));
+        setTimeLeft(remaining);
+      } else {
+        setTimeLeft((prev) => Math.max(0, prev - 1));
+      }
     }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
+
+    return () => clearInterval(interval);
+  }, [email]);
 
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -37,15 +74,16 @@ export default function VerifyEmail() {
   };
 
   const handleOtpChange = (index, value) => {
-    // Only accept numeric input
+    if (timeLeft <= 0) return;
+    // Accept only digits
     if (value && !/^\d+$/.test(value)) return;
 
     const newOtp = [...otp];
-    newOtp[index] = value.slice(-1); // Take latest single digit
+    newOtp[index] = value.slice(-1); // Take single digit
     setOtp(newOtp);
     setError('');
 
-    // Auto-focus next box
+    // Auto-advance to next box
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -59,25 +97,33 @@ export default function VerifyEmail() {
   };
 
   const handlePaste = (e) => {
+    if (timeLeft <= 0) return;
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').trim();
     if (/^\d{6}$/.test(pastedData)) {
       const digits = pastedData.split('');
       setOtp(digits);
       inputRefs.current[5]?.focus();
+      setError('');
     }
   };
 
   const handleVerify = async (e) => {
     if (e) e.preventDefault();
     const fullOtp = otp.join('');
+
+    if (timeLeft <= 0) {
+      setError('OTP expire ho gaya, naya code mangao.');
+      return;
+    }
+
     if (fullOtp.length !== 6) {
       setError('Please enter all 6 digits of the verification code.');
       return;
     }
 
     if (!email) {
-      setError('Email address is missing. Please enter your email.');
+      setError('Email address is missing. Please confirm your email.');
       return;
     }
 
@@ -87,24 +133,27 @@ export default function VerifyEmail() {
     try {
       const user = await verifyOtp(email, fullOtp);
       setSuccess(true);
-      showToast('Email verified successfully! Welcome to AutoFleet.', 'success');
+      // Clean up timer storage
+      localStorage.removeItem(`otp_expiry_${email}`);
+      showToast('Email verified successfully! Welcome to Vehicle Rental System.', 'success');
       setTimeout(() => {
         if (user.role === 'admin') {
           navigate('/admin');
         } else {
           navigate('/');
         }
-      }, 1200);
+      }, 1000);
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Invalid or expired OTP code.');
+      setError(err.response?.data?.error || err.message || 'Verification failed.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleResend = async () => {
+    if (timeLeft > 0) return;
     if (!email) {
-      setError('Please provide an email address to resend OTP.');
+      setError('Please provide your email address to request a new code.');
       return;
     }
 
@@ -112,21 +161,32 @@ export default function VerifyEmail() {
     setError('');
 
     try {
-      await resendOtp(email);
-      setTimeLeft(600); // Reset timer to 10 minutes
+      const data = await resendOtp(email);
+      // Reset 60s timer and persist expiry
+      const newExpiry = Date.now() + 60 * 1000;
+      localStorage.setItem(`otp_expiry_${email}`, String(newExpiry));
+      setTimeLeft(60);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
-      showToast('A fresh 6-digit verification code has been dispatched.', 'info');
+      showToast('A fresh 6-digit verification code has been dispatched to your email.', 'info');
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to resend code.');
+      const resp = err.response?.data;
+      if (resp?.retry_after) {
+        setTimeLeft(resp.retry_after);
+        const newExpiry = Date.now() + resp.retry_after * 1000;
+        localStorage.setItem(`otp_expiry_${email}`, String(newExpiry));
+      }
+      setError(resp?.error || err.message || 'Failed to resend code.');
     } finally {
       setResending(false);
     }
   };
 
+  const isExpired = timeLeft <= 0;
+
   return (
     <div className="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-6 glass-card p-8 sm:p-10 rounded-3xl border border-slate-800 bg-slate-900/80 shadow-2xl">
+      <div className="max-w-md w-full space-y-6 glass-card p-8 sm:p-10 rounded-3xl border border-slate-800 bg-slate-900/90 shadow-2xl">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-emerald-500 text-white rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-indigo-600/30">
             <ShieldCheck className="w-6 h-6" />
@@ -135,7 +195,7 @@ export default function VerifyEmail() {
             Verify Your Email
           </h2>
           <p className="text-xs text-slate-400">
-            We have sent a 6-digit confirmation code to:
+            Enter the 6-digit confirmation code dispatched to:
           </p>
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-xs font-semibold text-indigo-300">
             <Mail className="w-3.5 h-3.5" />
@@ -144,16 +204,16 @@ export default function VerifyEmail() {
         </div>
 
         {error && (
-          <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-800/60 text-rose-300 text-xs flex items-center space-x-2 animate-fade-in">
+          <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800/70 text-rose-300 text-xs flex items-center space-x-2 animate-fade-in">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="p-3.5 rounded-xl bg-emerald-950/50 border border-emerald-800/60 text-emerald-300 text-xs flex items-center space-x-2 animate-fade-in">
+          <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 text-xs flex items-center space-x-2 animate-fade-in">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-            <span>Code confirmed! Redirecting to fleet portal...</span>
+            <span>Code verified! Redirecting to dashboard...</span>
           </div>
         )}
 
@@ -166,7 +226,7 @@ export default function VerifyEmail() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
-                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950/70 border border-slate-800 text-slate-100"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950/80 border border-slate-800 text-slate-100"
               />
             </div>
           )}
@@ -183,17 +243,30 @@ export default function VerifyEmail() {
                 value={digit}
                 onChange={(e) => handleOtpChange(idx, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(idx, e)}
-                disabled={loading || success}
-                className="w-11 h-13 sm:w-12 sm:h-14 text-center font-bold text-xl rounded-xl bg-slate-950 border-2 border-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-white transition-all outline-none"
+                disabled={loading || success || isExpired}
+                className={`w-11 h-13 sm:w-12 sm:h-14 text-center font-bold text-xl rounded-xl border-2 transition-all outline-none ${
+                  isExpired
+                    ? 'bg-slate-950/40 border-slate-800 text-slate-600 cursor-not-allowed'
+                    : 'bg-slate-950 border-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-white'
+                }`}
               />
             ))}
           </div>
 
-          {/* Countdown & Resend */}
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <div className="flex items-center space-x-1">
-              <span>Code expires in:</span>
-              <span className={`font-mono font-bold ${timeLeft < 60 ? 'text-rose-400 animate-pulse' : 'text-indigo-400'}`}>
+          {/* 60s Countdown Timer & Resend Button */}
+          <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+            <div className="flex items-center space-x-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span>Valid for:</span>
+              <span
+                className={`font-mono font-bold ${
+                  isExpired
+                    ? 'text-rose-400'
+                    : timeLeft <= 15
+                    ? 'text-amber-400 animate-pulse'
+                    : 'text-indigo-400'
+                }`}
+              >
                 {formatTimer(timeLeft)}
               </span>
             </div>
@@ -201,18 +274,28 @@ export default function VerifyEmail() {
             <button
               type="button"
               onClick={handleResend}
-              disabled={resending || loading || timeLeft > 540} // Allow resend after 1 min
-              className="flex items-center space-x-1 text-indigo-400 hover:text-indigo-300 font-semibold disabled:opacity-40 disabled:hover:text-indigo-400 transition-colors"
+              disabled={!isExpired || resending || loading}
+              className={`flex items-center space-x-1 text-xs font-semibold transition-colors ${
+                isExpired
+                  ? 'text-indigo-400 hover:text-indigo-300 underline cursor-pointer'
+                  : 'text-slate-500 cursor-not-allowed opacity-60'
+              }`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
-              <span>Resend code</span>
+              <span>{isExpired ? 'Resend code' : `Resend in ${timeLeft}s`}</span>
             </button>
           </div>
 
+          {isExpired && (
+            <p className="text-center text-xs text-amber-400/90 bg-amber-950/30 border border-amber-800/40 p-2.5 rounded-xl">
+              ⚠️ OTP expire ho gaya, naya code mangao. Click "Resend code" above.
+            </p>
+          )}
+
           <button
             type="submit"
-            disabled={loading || success || otp.join('').length !== 6}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
+            disabled={loading || success || isExpired || otp.join('').length !== 6}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
           >
             <span>{loading ? 'Verifying Code...' : 'Verify & Continue'}</span>
             <ArrowRight className="w-4 h-4" />

@@ -19,7 +19,8 @@ router.get('/google/callback', (req, res) => {
   res.json({ message: 'Google OAuth callback handler. In single-page apps, use POST /api/auth/google.' });
 });
 
-// Protected Profile Endpoint
+// Protected Profile Endpoints
 router.get('/me', authenticateToken, authController.getMe);
+router.put('/complete-profile', authenticateToken, authController.completeProfile);
 
 module.exports = router;

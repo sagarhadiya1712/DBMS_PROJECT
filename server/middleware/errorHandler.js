@@ -10,8 +10,10 @@ function errorHandler(err, req, res, next) {
 
   // Zod Validation Errors
   if (err.name === 'ZodError') {
+    const firstMsg = err.errors[0]?.message || 'Validation failed';
     return res.status(400).json({
-      error: 'Validation failed',
+      error: firstMsg,
+      message: firstMsg,
       details: err.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
     });
   }

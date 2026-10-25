@@ -66,11 +66,19 @@ export const AuthProvider = ({ children }) => {
 
   const googleLogin = async (payload) => {
     const res = await api.post('/auth/google', payload);
-    const { token, user: userData } = res.data;
+    const { token, user: userData, needsPhone } = res.data;
     localStorage.setItem('rental_token', token);
     localStorage.setItem('rental_user', JSON.stringify(userData));
     setUser(userData);
-    return userData;
+    return { user: userData, needsPhone };
+  };
+
+  const completeProfile = async (phone) => {
+    const res = await api.put('/auth/complete-profile', { phone });
+    const { user: updatedUser } = res.data;
+    localStorage.setItem('rental_user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+    return updatedUser;
   };
 
   const logout = () => {
@@ -103,6 +111,7 @@ export const AuthProvider = ({ children }) => {
         verifyOtp,
         resendOtp,
         googleLogin,
+        completeProfile,
         logout,
         updateUser,
       }}

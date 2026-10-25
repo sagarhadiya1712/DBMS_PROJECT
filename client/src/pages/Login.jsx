@@ -56,12 +56,12 @@ export default function Login() {
       setLoading(true);
       setError('');
       // Standard demo Google sign in payload
-      const user = await googleLogin({
-        email: email || 'demo.google@rental.com',
-        name: 'Google Explorer',
+      const result = await googleLogin({
+        email: email || undefined,
+        name: 'Google User',
         google_id: 'google_oauth_' + Date.now()
       });
-      showToast(`Logged in via Google as ${user.name}!`, 'success');
+      showToast(`Logged in via Google as ${result.user.name}!`, 'success');
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.error || 'Google authentication failed.');

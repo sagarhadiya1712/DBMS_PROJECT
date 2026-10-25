@@ -22,6 +22,9 @@ import VerifyEmail from './pages/VerifyEmail';
 // Admin Pages
 import AdminPortal from './pages/admin/AdminPortal';
 
+import CompleteProfileModal from './components/CompleteProfileModal';
+import { useAuth } from './context/AuthContext';
+
 // 404 Page
 function NotFound() {
   return (
@@ -41,11 +44,27 @@ function NotFound() {
   );
 }
 
+function GlobalProfileChecker() {
+  const { user } = useAuth();
+  const [dismissed, setDismissed] = React.useState(false);
+
+  // If user is verified and phone number is missing (e.g. from Google OAuth)
+  const isMissingPhone = Boolean(user && user.is_verified && (!user.phone || user.phone.trim() === ''));
+
+  return (
+    <CompleteProfileModal
+      isOpen={isMissingPhone && !dismissed}
+      onClose={() => setDismissed(true)}
+    />
+  );
+}
+
 export default function App() {
   return (
     <Router>
       <AuthProvider>
         <NotificationProvider>
+          <GlobalProfileChecker />
           <div className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 selection:bg-indigo-500 selection:text-white">
             <Navbar />
             <main className="flex-1">

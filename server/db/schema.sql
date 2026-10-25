@@ -39,7 +39,9 @@ CREATE TABLE email_otps (
     email      VARCHAR2(150) NOT NULL,
     otp_hash   VARCHAR2(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
-    used       NUMBER(1) DEFAULT 0 CHECK (used IN (0, 1))
+    used       NUMBER(1) DEFAULT 0 CHECK (used IN (0, 1)),
+    attempts   NUMBER(2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Vehicles Table

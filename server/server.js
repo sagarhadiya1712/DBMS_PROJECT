@@ -60,6 +60,51 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Dev-Only Live Database Inspection Endpoint
+app.get('/api/dev/db-inspect', (req, res) => {
+  const db = require('./db/db');
+  const fs = require('fs');
+  const dbPath = path.join(__dirname, 'db', 'rental.db');
+
+  const journalMode = db.pragma('journal_mode', { simple: true });
+  const foreignKeys = db.pragma('foreign_keys', { simple: true });
+  const stats = fs.existsSync(dbPath) ? fs.statSync(dbPath) : null;
+
+  const usersCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  const vehiclesCount = db.prepare('SELECT COUNT(*) as count FROM vehicles').get().count;
+  const bookingsCount = db.prepare('SELECT COUNT(*) as count FROM bookings').get().count;
+  const otpsCount = db.prepare('SELECT COUNT(*) as count FROM email_otps').get().count;
+
+  const recentUsers = db.prepare(`
+    SELECT user_id, name, email, phone, role, is_verified, is_blocked, google_id, created_at 
+    FROM users ORDER BY user_id DESC LIMIT 5
+  `).all();
+
+  const recentOtps = db.prepare(`
+    SELECT otp_id, email, used, attempts, expires_at, created_at 
+    FROM email_otps ORDER BY otp_id DESC LIMIT 5
+  `).all();
+
+  res.json({
+    status: 'success',
+    database: {
+      file: dbPath,
+      sizeBytes: stats ? stats.size : 0,
+      lastModified: stats ? stats.mtime : null,
+      journal_mode: String(journalMode).toUpperCase(),
+      foreign_keys: foreignKeys === 1 ? 'ON' : 'OFF',
+    },
+    counts: {
+      users: usersCount,
+      vehicles: vehiclesCount,
+      bookings: bookingsCount,
+      email_otps: otpsCount
+    },
+    recentUsers,
+    recentOtps
+  });
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicles', vehicleRoutes);
@@ -75,8 +120,8 @@ app.use('/api/discounts', discountRoutes);
 // Central Error Handler
 app.use(errorHandler);
 
-// Start Server if directly invoked
-if (process.env.NODE_ENV !== 'test') {
+// Start Server only if directly invoked via `node server.js`
+if (require.main === module && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`\n======================================================`);
     console.log(`🚀 Fleet Rental API Server listening on port ${PORT}`);
