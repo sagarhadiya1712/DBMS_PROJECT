@@ -183,3 +183,29 @@ All **23 integration tests** pass cleanly with 100% coverage across business log
 > **Solutions**:
 > 1. Attach a Render **Persistent Disk** mounted at `/server/db`.
 > 2. Alternatively, connect to **Turso** (`@libsql/client`), which is a serverless hosted SQLite database with a generous free tier that keeps SQLite's speed with persistent cloud storage.
+
+---
+
+## 🔑 Authentication Guide: Email OTP & Google Sign-In
+
+### 1. 📧 Email OTP Verification
+- **How Real Email Delivery Works**:
+  1. Open your Google Account at [myaccount.google.com/security](https://myaccount.google.com/security).
+  2. Ensure **2-Step Verification** is turned ON.
+  3. Search for **App passwords**, create one named `VehicleRental`, and copy the 16-character code (e.g., `abcd efgh ijkl mnop`).
+  4. Paste into `server/.env`:
+     ```env
+     GMAIL_USER=your_gmail_id@gmail.com
+     GMAIL_APP_PASSWORD=your_16_char_app_password
+     ```
+  5. Restart the server (`node server.js`). OTPs will now be sent straight to any entered email inbox via direct SSL connection (`smtp.gmail.com:465`).
+- **Zero-Block Development / Demo Mode**:
+  - If `GMAIL_USER` and `GMAIL_APP_PASSWORD` are not configured in `.env`, the system automatically activates **Dev Mode**:
+  - The 6-digit code is generated and securely hashed in the database, while the verification screen displays a **"Verification Code Generated"** card with an **`[⚡ Auto-Fill Code]`** button. You can click this to instantly test and verify registrations without needing an SMTP connection.
+
+### 2. 🌐 Google Sign-In & Sign-Up
+- **Direct 1-Click Verification**:
+  - Clicking **"Sign up with Google"** or **"Sign in with Google"** opens the modal.
+  - You can enter any Google email address or click **"Use 1-Click Demo Google Account"**.
+  - Accounts verified through Google are automatically activated (`is_verified = 1`) and can immediately browse and book vehicles without waiting for an OTP.
+

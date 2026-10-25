@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Car, Lock, Mail, User, Phone, Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import GoogleAuthModal from '../components/GoogleAuthModal';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -41,18 +42,22 @@ export default function Register() {
       return;
     }
 
-    setLoading(true);
-
     try {
-      await signup({
+      const resp = await signup({
         name: formData.name.trim(),
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim(),
         password: formData.password,
       });
 
-      showToast('Registration initiated! Please enter the 6-digit verification code sent to your email.', 'success');
-      navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim())}`);
+      showToast(resp?.message || 'Registration initiated! Please enter the 6-digit verification code.', 'success');
+      navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim())}`, {
+        state: {
+          email: formData.email.trim(),
+          devOtp: resp?.devOtp || resp?.simulatedOtp,
+          emailWarning: resp?.emailWarning,
+        },
+      });
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Signup failed. Please try again.');
     } finally {
@@ -60,20 +65,28 @@ export default function Register() {
     }
   };
 
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+
   const handleGoogleSignUp = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const result = await googleLogin({
-        email: formData.email.trim() || undefined,
-        name: formData.name.trim() || undefined
-      });
-      showToast(`Welcome, ${result.user.name}! Signed up with Google.`, 'success');
-      navigate('/');
-    } catch (err) {
-      setError(err.response?.data?.error || 'Google signup failed.');
-    } finally {
-      setLoading(false);
+    // If email already entered in the registration field, authenticate directly
+    if (formData.email.trim()) {
+      try {
+        setLoading(true);
+        setError('');
+        const result = await googleLogin({
+          email: formData.email.trim(),
+          name: formData.name.trim() || undefined
+        });
+        showToast(`Welcome, ${result.user.name}! Signed up with Google.`, 'success');
+        navigate('/');
+      } catch (err) {
+        setError(err.response?.data?.error || 'Google signup failed.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // If email was not yet entered, open GoogleAuthModal so user can specify or 1-click continue
+      setShowGoogleModal(true);
     }
   };
 
@@ -242,6 +255,14 @@ export default function Register() {
           </Link>
         </div>
       </div>
+
+      {/* Google Sign Up Modal */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        initialEmail={formData.email}
+        initialName={formData.name}
+      />
     </div>
   );
 }

@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, ArrowRight, Clock } from 'lucide-react';
+import { useSearchParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, ArrowRight, Clock, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { verifyOtp, resendOtp } = useAuth();
   const { showToast } = useNotifications();
 
-  const emailParam = searchParams.get('email') || '';
+  const emailParam = searchParams.get('email') || location.state?.email || '';
   const [email, setEmail] = useState(emailParam);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [devOtp, setDevOtp] = useState(location.state?.devOtp || '');
+  const [emailWarning, setEmailWarning] = useState(location.state?.emailWarning || '');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState('');
@@ -162,13 +165,19 @@ export default function VerifyEmail() {
 
     try {
       const data = await resendOtp(email);
+      if (data?.devOtp || data?.simulatedOtp) {
+        setDevOtp(data.devOtp || data.simulatedOtp);
+      }
+      if (data?.emailWarning) {
+        setEmailWarning(data.emailWarning);
+      }
       // Reset 60s timer and persist expiry
       const newExpiry = Date.now() + 60 * 1000;
       localStorage.setItem(`otp_expiry_${email}`, String(newExpiry));
       setTimeLeft(60);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
-      showToast('A fresh 6-digit verification code has been dispatched to your email.', 'info');
+      showToast(data?.message || 'A fresh 6-digit verification code has been dispatched.', 'info');
     } catch (err) {
       const resp = err.response?.data;
       if (resp?.retry_after) {
@@ -214,6 +223,41 @@ export default function VerifyEmail() {
           <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 text-xs flex items-center space-x-2 animate-fade-in">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
             <span>Code verified! Redirecting to dashboard...</span>
+          </div>
+        )}
+
+        {/* Demo / SMTP fallback banner if Gmail credentials are not configured */}
+        {devOtp && !success && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/50 to-indigo-950/40 border border-amber-500/40 text-amber-200 text-xs space-y-2.5 shadow-lg shadow-amber-900/10">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-amber-300 flex items-center space-x-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Verification Code Generated:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const digits = String(devOtp).split('').slice(0, 6);
+                  setOtp(digits);
+                  setError('');
+                  inputRefs.current[5]?.focus();
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold border border-amber-500/40 transition-all text-[11px] shadow-sm flex items-center space-x-1"
+              >
+                <span>⚡ Auto-Fill Code</span>
+              </button>
+            </div>
+            <div className="flex items-baseline justify-between pt-0.5 border-t border-amber-800/40">
+              <span className="text-[11px] text-slate-300">
+                Your 6-digit code: <strong className="font-mono text-base tracking-widest text-amber-300 ml-1">{devOtp}</strong>
+              </span>
+              <span className="text-[10px] text-slate-400">Valid 60s</span>
+            </div>
+            {emailWarning && (
+              <p className="text-[10px] text-amber-400/80 leading-relaxed italic">
+                {emailWarning}
+              </p>
+            )}
           </div>
         )}
 

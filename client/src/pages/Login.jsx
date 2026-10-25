@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Car, Lock, Mail, Eye, EyeOff, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import GoogleAuthModal from '../components/GoogleAuthModal';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -51,22 +52,27 @@ export default function Login() {
     setError('');
   };
 
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+
   const handleGoogleSignIn = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      // Standard demo Google sign in payload
-      const result = await googleLogin({
-        email: email || undefined,
-        name: 'Google User',
-        google_id: 'google_oauth_' + Date.now()
-      });
-      showToast(`Logged in via Google as ${result.user.name}!`, 'success');
-      navigate('/');
-    } catch (err) {
-      setError(err.response?.data?.error || 'Google authentication failed.');
-    } finally {
-      setLoading(false);
+    if (email.trim()) {
+      try {
+        setLoading(true);
+        setError('');
+        const result = await googleLogin({
+          email: email.trim(),
+          name: 'Google User',
+          google_id: 'google_oauth_' + Date.now()
+        });
+        showToast(`Logged in via Google as ${result.user.name}!`, 'success');
+        navigate('/');
+      } catch (err) {
+        setError(err.response?.data?.error || 'Google authentication failed.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setShowGoogleModal(true);
     }
   };
 
@@ -215,6 +221,13 @@ export default function Login() {
           </Link>
         </div>
       </div>
+
+      {/* Google Sign In Modal */}
+      <GoogleAuthModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        initialEmail={email}
+      />
     </div>
   );
 }

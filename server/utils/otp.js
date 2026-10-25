@@ -26,23 +26,33 @@ async function compareOTP(plainOtp, hashedOtp) {
 
 /**
  * Send responsive HTML email with Nodemailer (Gmail SMTP)
- * Note: Plain OTP is sent strictly inside the encrypted email body and NEVER logged to DB or console.
  */
 async function sendOTPEmail(email, otp) {
-  const user = process.env.GMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
-
-  console.log(`📨 [Nodemailer] Dispatching 60-second OTP email to: ${email}`);
+  const user = process.env.GMAIL_USER ? process.env.GMAIL_USER.trim() : '';
+  const pass = process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.trim() : '';
 
   // If credentials are not configured in .env
   if (!user || !pass) {
-    console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD not set in .env. Email dispatch simulated.');
-    return { success: true, simulated: true };
+    console.warn(`⚠️ [Nodemailer] GMAIL_USER / GMAIL_APP_PASSWORD not set in server/.env. Email dispatch simulated for: ${email}`);
+    return {
+      success: true,
+      simulated: true,
+      reason: 'GMAIL_USER or GMAIL_APP_PASSWORD is not configured in server/.env'
+    };
   }
 
+  console.log(`📨 [Nodemailer] Connecting to Gmail SMTP (smtp.gmail.com) for: ${email}`);
+
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user, pass }
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // SSL
+    auth: {
+      user: user,
+      pass: pass
+    },
+    connectionTimeout: 10000, // 10s
+    greetingTimeout: 10000
   });
 
   const htmlTemplate = `
@@ -92,14 +102,19 @@ async function sendOTPEmail(email, otp) {
     </html>
   `;
 
-  await transporter.sendMail({
-    from: `"Vehicle Rental System" <${user}>`,
-    to: email,
-    subject: 'Your 6-Digit Email Verification Code (Expires in 60s)',
-    html: htmlTemplate
-  });
-
-  return { success: true, simulated: false };
+  try {
+    const info = await transporter.sendMail({
+      from: `"Vehicle Rental System" <${user}>`,
+      to: email,
+      subject: 'Your 6-Digit Email Verification Code (Expires in 60s)',
+      html: htmlTemplate
+    });
+    console.log(`✅ [Nodemailer] Email successfully sent to ${email} (Message ID: ${info.messageId})`);
+    return { success: true, simulated: false, messageId: info.messageId };
+  } catch (err) {
+    console.error(`❌ [Nodemailer] Failed to send email to ${email}:`, err.message);
+    return { success: false, simulated: false, error: err.message };
+  }
 }
 
 module.exports = {

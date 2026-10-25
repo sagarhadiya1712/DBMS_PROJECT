@@ -80,20 +80,31 @@ async function signup(req, res, next) {
 
     // Dispatch OTP via Nodemailer (Gmail SMTP)
     let emailWarning = null;
+    let mailResult = { success: true, simulated: true };
     try {
-      await sendOTPEmail(email, rawOtp);
+      mailResult = await sendOTPEmail(email, rawOtp);
+      if (mailResult.simulated) {
+        emailWarning = 'Live Gmail SMTP not configured in server/.env. For testing, your 6-digit OTP code is: ' + rawOtp;
+      } else if (!mailResult.success) {
+        emailWarning = `Email delivery issue: ${mailResult.error || 'Check Gmail SMTP settings'}. Your OTP for testing is: ${rawOtp}`;
+      }
     } catch (mailErr) {
-      console.error('⚠️ Nodemailer delivery failed:', mailErr.message);
-      emailWarning = 'Email delivery encountered an issue. You can click resend after 60 seconds.';
+      console.error('⚠️ Nodemailer delivery error:', mailErr.message);
+      emailWarning = `Email delivery failed: ${mailErr.message}. Your OTP for testing is: ${rawOtp}`;
     }
 
     res.status(201).json({
-      message: 'Registration successful. A 6-digit verification code has been dispatched to your email.',
+      message: mailResult.simulated || !mailResult.success
+        ? 'Registration successful. (Demo mode: Gmail credentials not configured in server/.env)'
+        : 'Registration successful. A 6-digit verification code has been dispatched to your email.',
       email,
       expires_in: 60,
       retry_after: 60,
       emailWarning,
-      ...(process.env.NODE_ENV === 'test' ? { simulatedOtp: rawOtp, testOtp: rawOtp } : {})
+      isSimulated: mailResult.simulated || !mailResult.success,
+      ...(mailResult.simulated || !mailResult.success || process.env.NODE_ENV === 'test'
+        ? { simulatedOtp: rawOtp, testOtp: rawOtp, devOtp: rawOtp }
+        : {})
     });
   } catch (err) {
     next(err);
@@ -167,20 +178,31 @@ async function resendOtp(req, res, next) {
     `).run(normalizedEmail, hashedOtp, expiresAt);
 
     let emailWarning = null;
+    let mailResult = { success: true, simulated: true };
     try {
-      await sendOTPEmail(normalizedEmail, rawOtp);
+      mailResult = await sendOTPEmail(normalizedEmail, rawOtp);
+      if (mailResult.simulated) {
+        emailWarning = 'Live Gmail SMTP not configured in server/.env. For testing, your 6-digit OTP code is: ' + rawOtp;
+      } else if (!mailResult.success) {
+        emailWarning = `Email delivery issue: ${mailResult.error || 'Check Gmail SMTP settings'}. Your OTP for testing is: ${rawOtp}`;
+      }
     } catch (mailErr) {
-      console.error('⚠️ Nodemailer delivery failed:', mailErr.message);
-      emailWarning = 'Email delivery encountered an issue. You can click resend after 60 seconds.';
+      console.error('⚠️ Nodemailer delivery error on resend:', mailErr.message);
+      emailWarning = `Email delivery failed: ${mailErr.message}. Your OTP for testing is: ${rawOtp}`;
     }
 
     res.json({
-      message: 'A fresh 6-digit verification code has been dispatched to your email.',
+      message: mailResult.simulated || !mailResult.success
+        ? 'A fresh 6-digit verification code has been generated. (Gmail credentials not configured in server/.env)'
+        : 'A fresh 6-digit verification code has been dispatched to your email.',
       email: normalizedEmail,
       expires_in: 60,
       retry_after: 60,
       emailWarning,
-      ...(process.env.NODE_ENV === 'test' ? { simulatedOtp: rawOtp, testOtp: rawOtp } : {})
+      isSimulated: mailResult.simulated || !mailResult.success,
+      ...(mailResult.simulated || !mailResult.success || process.env.NODE_ENV === 'test'
+        ? { simulatedOtp: rawOtp, testOtp: rawOtp, devOtp: rawOtp }
+        : {})
     });
   } catch (err) {
     next(err);
@@ -381,7 +403,9 @@ async function googleAuth(req, res, next) {
     }
 
     if (!userEmail) {
-      return res.status(400).json({ error: 'Google email verification failed.' });
+      return res.status(400).json({ 
+        error: 'Please enter your Google account email to continue with Google sign-in.' 
+      });
     }
 
     const normalizedEmail = userEmail.toLowerCase().trim();
