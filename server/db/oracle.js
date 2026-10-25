@@ -93,6 +93,14 @@ async function initOracleSchema() {
         }
       }
     }
+
+    // Ensure last_login column exists in Oracle users table
+    try {
+      await conn.execute('ALTER TABLE users ADD (last_login TIMESTAMP)');
+    } catch (err) {
+      // ORA-01430: column being added already exists in table
+    }
+
     console.log('✅ [Oracle DB] Schema initialized/verified in Oracle Free (DBMS_PROJ).');
   } finally {
     await conn.close();
@@ -119,7 +127,8 @@ async function syncSqliteToOracle(sqliteDb) {
          WHEN MATCHED THEN
            UPDATE SET t.name = s.name, t.phone = s.phone, t.password_hash = s.password_hash,
                       t.role = s.role, t.is_verified = s.is_verified, t.is_blocked = s.is_blocked,
-                      t.google_id = s.google_id
+                      t.google_id = s.google_id,
+                      t.last_login = CASE WHEN :last_login IS NOT NULL THEN TO_TIMESTAMP(:last_login, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') ELSE t.last_login END
          WHEN NOT MATCHED THEN
            INSERT (name, phone, email, password_hash, role, is_verified, is_blocked, google_id)
            VALUES (s.name, s.phone, s.email, s.password_hash, s.role, s.is_verified, s.is_blocked, s.google_id)`,
@@ -133,6 +142,7 @@ async function syncSqliteToOracle(sqliteDb) {
           is_verified: u.is_verified ? 1 : 0,
           is_blocked: u.is_blocked ? 1 : 0,
           google_id: u.google_id || null,
+          last_login: u.last_login || null,
         }
       );
     }
@@ -220,10 +230,26 @@ async function syncUserToOracle(u) {
   }
 }
 
+/**
+ * Update user last_login in Oracle on successful login
+ */
+async function recordUserLogin(email) {
+  if (!email) return;
+  try {
+    await executeOracle(
+      `UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE LOWER(email) = LOWER(:email)`,
+      { email: email.trim() }
+    );
+  } catch (err) {
+    console.error('⚠️ [Oracle Login Update Error]:', err.message);
+  }
+}
+
 module.exports = {
   getOraclePool,
   executeOracle,
   initOracleSchema,
   syncSqliteToOracle,
   syncUserToOracle,
+  recordUserLogin,
 };

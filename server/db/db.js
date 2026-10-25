@@ -39,4 +39,15 @@ try {
   // If table doesn't exist yet, it will be created by schema
 }
 
+// Self-healing migration for users table (ensure last_login column exists)
+try {
+  const userTableInfo = db.pragma('table_info(users)');
+  const userCols = userTableInfo.map((col) => col.name);
+  if (!userCols.includes('last_login')) {
+    db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME');
+  }
+} catch (e) {
+  // Table created by schema
+}
+
 module.exports = db;

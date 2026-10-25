@@ -3,7 +3,7 @@ const { z } = require('zod');
 const db = require('../db/db');
 const { signToken } = require('../utils/jwt');
 const { generateOTP, hashOTP, compareOTP, sendOTPEmail } = require('../utils/otp');
-const { syncUserToOracle } = require('../db/oracle');
+const { syncUserToOracle, recordUserLogin } = require('../db/oracle');
 
 // Validation Schemas
 const signupSchema = z.object({
@@ -356,6 +356,12 @@ async function login(req, res, next) {
         retry_after: 60
       });
     }
+
+    // Update last_login in SQLite & live sync to Oracle
+    try {
+      db.prepare("UPDATE users SET last_login = datetime('now') WHERE user_id = ?").run(user.user_id);
+      recordUserLogin(normalizedEmail).catch(() => {});
+    } catch (e) {}
 
     const token = signToken({ user_id: user.user_id, role: user.role });
 
