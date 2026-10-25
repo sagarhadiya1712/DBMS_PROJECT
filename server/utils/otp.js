@@ -29,7 +29,7 @@ async function compareOTP(plainOtp, hashedOtp) {
  */
 async function sendOTPEmail(email, otp) {
   const user = process.env.GMAIL_USER ? process.env.GMAIL_USER.trim() : '';
-  const pass = process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.trim() : '';
+  const pass = process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.replace(/\s+/g, '') : '';
 
   // If credentials are not configured in .env
   if (!user || !pass) {
