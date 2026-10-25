@@ -3,170 +3,157 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Car,
   Calendar,
-  MapPin,
   Search,
   Shield,
   Zap,
   Star,
   ArrowRight,
-  CheckCircle,
   Clock,
   Sparkles,
-  Crown,
-  UserCheck,
+  Award,
+  Users,
+  CheckCircle2,
+  ShieldCheck,
+  ChevronRight
 } from 'lucide-react';
 import api from '../services/api';
-import { formatCurrency } from '../utils/formatters';
 
 export default function Home() {
   const navigate = useNavigate();
   const [featuredVehicles, setFeaturedVehicles] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [luxuryVehicle, setLuxuryVehicle] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // Search widget state
-  const [selectedBranch, setSelectedBranch] = useState('');
   const [category, setCategory] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDateTime, setStartDateTime] = useState('');
+  const [endDateTime, setEndDateTime] = useState('');
 
   useEffect(() => {
-    // Fetch featured fleet
-    const loadData = async () => {
+    const fetchFleet = async () => {
       try {
-        const [vehRes, branchRes] = await Promise.all([
-          api.get('/vehicles?status=AVAILABLE'),
-          api.get('/branches'),
-        ]);
-        if (vehRes.data.success) {
-          setFeaturedVehicles(vehRes.data.data.slice(0, 6));
-        }
-        if (branchRes.data.success) {
-          setBranches(branchRes.data.data);
-        }
-      } catch (e) {
-        console.error('Failed to load home data:', e);
+        const res = await api.get('/vehicles');
+        const list = res.data || [];
+        setFeaturedVehicles(list.slice(0, 6));
+
+        // Find luxury vehicle (Innova Hycross)
+        const lux = list.find((v) => v.category === 'Luxury' || v.is_chauffeur_driven === 1);
+        setLuxuryVehicle(lux || list[0]);
+      } catch (err) {
+        console.error('Failed to load featured vehicles:', err);
+      } finally {
+        setLoading(false);
       }
     };
-    loadData();
+    fetchFleet();
   }, []);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (selectedBranch) params.append('branchId', selectedBranch);
     if (category) params.append('category', category);
-    if (startDate) params.append('startDateTime', startDate);
-    if (endDate) params.append('endDateTime', endDate);
+    if (startDateTime) params.append('start_datetime', new Date(startDateTime).toISOString());
+    if (endDateTime) params.append('end_datetime', new Date(endDateTime).toISOString());
     navigate(`/vehicles?${params.toString()}`);
   };
 
+  const categories = [
+    { name: 'Hatchback', subtitle: 'Maruti Swift, Tiago, i20', icon: '🚗', count: '3 models' },
+    { name: 'Sedan', subtitle: 'Honda City, Dzire, Verna', icon: '🚘', count: '3 models' },
+    { name: 'SUV', subtitle: 'Mahindra XUV700, Thar, Nexon', icon: '🚙', count: '5 models' },
+    { name: 'MUV', subtitle: 'Innova Crysta, Ertiga', icon: '🚐', count: '2 models' },
+    { name: 'Luxury', subtitle: 'Innova Hycross (Chauffeur)', icon: '⭐', count: '1 Exclusive' },
+  ];
+
   return (
-    <div className="space-y-20 pb-20">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-slate-950 text-white pt-16 pb-28 lg:pt-24 lg:pb-36">
-        {/* Ambient gradient glow */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-indigo-600/30 via-blue-500/20 to-teal-400/20 blur-[130px] rounded-full pointer-events-none" />
+    <div className="space-y-24 pb-24">
+      {/* 1. HERO SECTION */}
+      <section className="relative overflow-hidden pt-12 pb-24 lg:pt-20 lg:pb-32">
+        {/* Glow ambient spots */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[380px] bg-indigo-600/20 blur-[140px] rounded-full pointer-events-none" />
+        <div className="absolute top-1/3 right-1/4 w-[400px] h-[300px] bg-violet-600/15 blur-[120px] rounded-full pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center max-w-3xl mx-auto space-y-6">
-            <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/15 text-indigo-300 text-xs font-semibold backdrop-blur-md">
+            <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-indigo-500/30 text-indigo-300 text-xs font-semibold backdrop-blur-md shadow-inner">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>India's Leading Fleet Network • Surat • Ahmedabad • Mumbai • Pune</span>
+              <span>Next-Gen Smart Fleet Rental • Verified • Zero Double Bookings</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.15]">
-              Self-Drive & Luxury Fleet <br />
-              <span className="bg-gradient-to-r from-indigo-400 via-blue-300 to-teal-300 bg-clip-text text-transparent">
-                Across Western India
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.12] text-white">
+              Rent Premium Cars <br />
+              <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-sky-400 bg-clip-text text-transparent">
+                With Seamless Digital Check-in
               </span>
             </h1>
 
             <p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto font-normal">
-              Book Hatchbacks, Sedans, SUVs, Innova Crysta, and Executive Chauffeur Taxi with live availability, zero double-bookings, and transparent INR billing.
+              Experience India's most dependable fleet platform. Guaranteed real-time availability, Razorpay test payments, instant PDF invoices, and luxury chauffeur transfers.
             </p>
           </div>
 
-          {/* Quick Search Widget */}
+          {/* Interactive Search Bar Widget */}
           <div className="mt-12 max-w-4xl mx-auto">
             <form
               onSubmit={handleSearchSubmit}
-              className="glass p-4 sm:p-5 rounded-3xl shadow-2xl border border-white/20 text-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+              className="glass-panel p-4 sm:p-6 rounded-3xl shadow-2xl border border-slate-800 bg-slate-900/90 text-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
             >
-              {/* Branch */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center space-x-1">
-                  <MapPin className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Pickup City / Hub</span>
-                </label>
-                <select
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                >
-                  <option value="">All Operational Hubs</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.city})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* Category */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center space-x-1">
-                  <Car className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Vehicle Type</span>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center space-x-1">
+                  <Car className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Category</span>
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                 >
                   <option value="">All Categories</option>
-                  <option value="HATCHBACK">Hatchback (Swift, Tiago)</option>
-                  <option value="SEDAN">Sedan (Dzire, Amaze)</option>
-                  <option value="SUV">SUV (Nexon, Scorpio-N, Thar)</option>
-                  <option value="MUV">MUV (Innova, Ertiga)</option>
-                  <option value="LUXURY_TAXI">⭐ Luxury Taxi (Mercedes E-Class)</option>
+                  <option value="Hatchback">Hatchback (Swift, Tiago)</option>
+                  <option value="Sedan">Sedan (City, Dzire, Verna)</option>
+                  <option value="SUV">SUV (XUV700, Thar, Nexon)</option>
+                  <option value="MUV">MUV (Innova Crysta, Ertiga)</option>
+                  <option value="Luxury">Luxury Chauffeur Taxi</option>
                 </select>
               </div>
 
-              {/* Start Date */}
+              {/* Pick-up Date/Time */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center space-x-1">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Pickup Date</span>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center space-x-1">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Pick-Up Date & Time</span>
                 </label>
                 <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  type="datetime-local"
+                  value={startDateTime}
+                  onChange={(e) => setStartDateTime(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              {/* End Date & Action */}
-              <div className="flex flex-col justify-end">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center space-x-1">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Return Date</span>
+              {/* Return Date/Time */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center space-x-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Return Date & Time</span>
                 </label>
                 <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-3 sm:mb-0"
+                  type="datetime-local"
+                  value={endDateTime}
+                  onChange={(e) => setEndDateTime(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="sm:col-span-2 lg:col-span-4 mt-2">
+              {/* Search Button */}
+              <div className="flex items-end">
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 flex items-center justify-center space-x-2 transition-all transform active:scale-[0.99]"
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center space-x-2"
                 >
                   <Search className="w-4 h-4" />
-                  <span>Search Available Fleet</span>
+                  <span>Find Available Cars</span>
                 </button>
               </div>
             </form>
@@ -174,158 +161,232 @@ export default function Home() {
         </div>
       </section>
 
-      {/* KPI Stats Strip */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-10 sm:-mt-14 relative z-20">
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-6 sm:p-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+      {/* 2. POPULAR CATEGORIES */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8">
           <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-indigo-600 font-display">15</div>
-            <div className="text-xs font-semibold text-slate-600 mt-1">Indian Fleet Models</div>
-          </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 font-display">100%</div>
-            <div className="text-xs font-semibold text-slate-600 mt-1">Zero Overlap Guarantee</div>
-          </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-emerald-600 font-display">
-              {branches.length || 4}
-            </div>
-            <div className="text-xs font-semibold text-slate-600 mt-1">
-              {branches.length > 0
-                ? [...new Set(branches.map((b) => b.city))].join(' • ')
-                : 'Surat • Ahmedabad • Mumbai • Pune'}
-            </div>
-          </div>
-          <div>
-            <div className="text-3xl sm:text-4xl font-extrabold text-amber-500 font-display">₹1,200/d</div>
-            <div className="text-xs font-semibold text-slate-600 mt-1">Fares Starting From</div>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Fleet Showcase */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Top Indian Fleet</span>
-            <h2 className="text-3xl font-extrabold text-slate-900 mt-1">Featured Vehicles</h2>
+            <span className="text-xs font-bold tracking-widest text-indigo-400 uppercase">Categories</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">Explore by Segment</h2>
           </div>
           <Link
             to="/vehicles"
-            className="inline-flex items-center space-x-1.5 text-sm font-bold text-indigo-600 hover:text-indigo-700 group"
+            className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 mt-2 sm:mt-0"
           >
-            <span>View All Fleet</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <span>View entire fleet</span>
+            <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {featuredVehicles.map((vehicle) => {
-            const primaryImage =
-              vehicle.images?.find((img) => img.isPrimary)?.imageUrl ||
-              vehicle.images?.[0]?.imageUrl ||
-              '/vehicles/placeholder.jpg';
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          {categories.map((cat) => (
+            <Link
+              key={cat.name}
+              to={`/vehicles?category=${cat.name}`}
+              className="glass-card p-5 rounded-2xl border border-slate-800/80 bg-slate-900/60 hover:border-indigo-500/40 transition-all group"
+            >
+              <div className="text-3xl mb-3">{cat.icon}</div>
+              <h3 className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">
+                {cat.name}
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{cat.subtitle}</p>
+              <span className="inline-block mt-3 text-[10px] uppercase font-bold text-indigo-300 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">
+                {cat.count}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
 
-            const isLuxuryTaxi = vehicle.category === 'LUXURY_TAXI';
+      {/* 3. FEATURED FLEET */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-end mb-8">
+          <div>
+            <span className="text-xs font-bold tracking-widest text-indigo-400 uppercase">Fleet Spotlight</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">Top Recommended Vehicles</h2>
+          </div>
+          <Link
+            to="/vehicles"
+            className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center space-x-1"
+          >
+            <span>Browse All (14)</span>
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
 
-            return (
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-80 rounded-2xl bg-slate-900/50 animate-pulse border border-slate-800" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featuredVehicles.map((vehicle) => (
               <div
-                key={vehicle.id}
-                className={`bg-white rounded-3xl overflow-hidden shadow-card hover:shadow-glow transition-all duration-300 border flex flex-col group ${
-                  isLuxuryTaxi ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-slate-100'
-                }`}
+                key={vehicle.vehicle_id}
+                className="glass-card rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-900/70 flex flex-col group"
               >
-                {/* Image */}
-                <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100">
+                {/* Vehicle Image */}
+                <div className="relative h-48 bg-slate-950 overflow-hidden">
                   <img
-                    src={primaryImage}
-                    alt={`${vehicle.make} ${vehicle.model}`}
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = '/vehicles/placeholder.jpg';
-                    }}
+                    src={vehicle.image_url || '/vehicles/placeholder.jpg'}
+                    alt={vehicle.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => {
+                      e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80';
+                    }}
                   />
-                  <div className="absolute top-4 left-4 flex flex-wrap gap-1.5">
-                    {isLuxuryTaxi ? (
-                      <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center space-x-1 shadow-md">
-                        <Crown className="w-3.5 h-3.5" />
-                        <span>Luxury Taxi</span>
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/90 backdrop-blur-md text-slate-800 shadow">
-                        {vehicle.category}
-                      </span>
-                    )}
-                    {isLuxuryTaxi && (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-900/90 text-amber-300 flex items-center space-x-1 shadow-md backdrop-blur-md">
-                        <UserCheck className="w-3 h-3 text-amber-400" />
-                        <span>Chauffeur included</span>
+                  <div className="absolute top-3 left-3 flex gap-2">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-950/80 backdrop-blur-md text-white border border-slate-700">
+                      {vehicle.category}
+                    </span>
+                    {vehicle.is_chauffeur_driven === 1 && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 backdrop-blur-md text-amber-300 border border-amber-600/40">
+                        Chauffeur
                       </span>
                     )}
                   </div>
-                  <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-white flex items-center space-x-1">
-                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                    <span>{vehicle.avgRating || 5.0}</span>
+                  <div className="absolute top-3 right-3 flex items-center space-x-1 text-xs font-bold px-2 py-0.5 rounded-full bg-slate-950/80 backdrop-blur-md text-amber-400 border border-slate-700">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <span>{vehicle.avg_rating || '5.0'}</span>
                   </div>
                 </div>
 
                 {/* Info */}
-                <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                <div className="p-5 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {vehicle.year} {vehicle.make} {vehicle.model}
+                    <h3 className="text-base font-bold text-white group-hover:text-indigo-400 transition-colors">
+                      {vehicle.brand} {vehicle.name}
                     </h3>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {vehicle.branch?.name} • {vehicle.seatingCapacity} Seats • {vehicle.transmission} • {vehicle.fuelType}
-                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+                      <span>{vehicle.fuel_type}</span>
+                      <span>•</span>
+                      <span>{vehicle.transmission}</span>
+                      <span>•</span>
+                      <span>{vehicle.seats} Seats</span>
+                    </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between">
                     <div>
-                      <span className="text-2xl font-extrabold text-slate-900 font-display">
-                        {formatCurrency(vehicle.dailyRate)}
-                      </span>
-                      <span className="text-xs text-slate-600 font-medium"> / day</span>
+                      <span className="text-[10px] uppercase font-semibold text-slate-400 block">Starting at</span>
+                      <div className="flex items-baseline space-x-1">
+                        <span className="text-lg font-black text-indigo-400">Rs. {vehicle.price_per_day}</span>
+                        <span className="text-xs text-slate-500">/ day</span>
+                      </div>
                     </div>
 
                     <Link
-                      to={`/vehicles/${vehicle.id}`}
-                      className="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white text-xs font-bold transition-all shadow-sm"
+                      to={`/vehicles/${vehicle.vehicle_id}`}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center space-x-1"
                     >
-                      View & Book
+                      <span>Book</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 4. LUXURY CHAUFFEUR TAXI SPOTLIGHT */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="relative rounded-3xl overflow-hidden border border-amber-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/30 p-8 sm:p-12 shadow-2xl">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 blur-[130px] rounded-full pointer-events-none" />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center relative z-10">
+            <div className="space-y-6">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Executive Chauffeur-Driven Taxi</span>
+              </div>
+
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight leading-tight">
+                Toyota Innova Hycross ZX(O) Hybrid
+              </h2>
+
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Travel in first-class comfort with our exclusive chauffeur-driven luxury vehicle. Featuring ventilated ottoman captain seats, dual-zone climate control, and our assigned senior certified chauffeur (Rajesh Sharma).
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <div className="text-xs text-slate-400">Rate Plan</div>
+                  <div className="text-base font-bold text-amber-300 mt-0.5">Rs. 6,500 / day</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <div className="text-xs text-slate-400">Chauffeur</div>
+                  <div className="text-base font-bold text-slate-200 mt-0.5">Included</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <div className="text-xs text-slate-400">Class</div>
+                  <div className="text-base font-bold text-slate-200 mt-0.5">7-Seat Hybrid</div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Link
+                  to={luxuryVehicle ? `/vehicles/${luxuryVehicle.vehicle_id}` : '/vehicles?category=Luxury'}
+                  className="inline-flex items-center space-x-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition-all hover:scale-102"
+                >
+                  <span>Reserve Luxury Chauffeur Taxi</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="rounded-2xl overflow-hidden border border-amber-500/20 shadow-2xl">
+                <img
+                  src={luxuryVehicle?.image_url || 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=1000&q=80'}
+                  alt="Luxury Innova Hycross"
+                  className="w-full h-80 object-cover"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Special Luxury Chauffeur Taxi Highlight Banner */}
+      {/* 5. HOW IT WORKS (3 STEPS) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950 rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden shadow-2xl border border-amber-500/30">
-          <div className="relative z-10 max-w-xl space-y-4">
-            <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center space-x-1.5 w-fit">
-              <Crown className="w-3.5 h-3.5" />
-              <span>Exclusive Luxury Chauffeur Experience</span>
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Mercedes-Benz E-Class Luxury Chauffeur Taxi
-            </h2>
-            <p className="text-sm text-slate-300">
-              The only dedicated executive chauffeur service in our fleet. Perfect for corporate travel, airport VIP meet-and-greets, and luxury weddings. Includes courteous uniformed chauffeur, mineral water, and premium cabin amenities.
-            </p>
-            <div className="pt-2 flex items-center space-x-3">
-              <Link
-                to="/vehicles?category=LUXURY_TAXI"
-                className="inline-flex items-center space-x-2 px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-sm shadow-lg shadow-amber-500/30 transition-all"
-              >
-                <span>Book Luxury Taxi</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <span className="text-xs font-semibold text-amber-300">₹10,500/day • Chauffeur Included</span>
+        <div className="text-center max-w-2xl mx-auto mb-14 space-y-2">
+          <span className="text-xs font-bold tracking-widest text-indigo-400 uppercase">Seamless Lifecycle</span>
+          <h2 className="text-3xl font-black text-white">How It Works in 3 Simple Steps</h2>
+          <p className="text-xs text-slate-400">From digital selection to instant invoice streaming</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="glass-card p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 relative">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-black text-sm mb-4">
+              01
             </div>
+            <h3 className="text-base font-bold text-white mb-2">Search & Pick Model</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Explore 14 verified vehicles. Choose your flexible pricing plan (daily, hourly, or per km) with instant live overlap checks.
+            </p>
+          </div>
+
+          <div className="glass-card p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 relative">
+            <div className="w-10 h-10 rounded-xl bg-violet-600/20 border border-violet-500/30 text-violet-400 flex items-center justify-center font-black text-sm mb-4">
+              02
+            </div>
+            <h3 className="text-base font-bold text-white mb-2">Razorpay Test Check-Out</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Apply promo vouchers (e.g. WELCOME10), verify your booking summary, and complete secure payment in Razorpay sandbox test mode.
+            </p>
+          </div>
+
+          <div className="glass-card p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 relative">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-black text-sm mb-4">
+              03
+            </div>
+            <h3 className="text-base font-bold text-white mb-2">Drive & Instant Invoice</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Pick up your inspected car. When completed, download itemized tax invoice PDFs generated live with PDFKit.
+            </p>
           </div>
         </div>
       </section>

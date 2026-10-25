@@ -11,8 +11,9 @@
     "dev": "node start-dev.js",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
-    "build": "npm --prefix server run build && npm --prefix client run build",
-    "seed": "npm --prefix server run db:seed",
+    "db:init": "npm --prefix server run db:init",
+    "db:seed": "npm --prefix server run db:seed",
+    "build": "npm --prefix client run build",
     "test": "npm --prefix server test"
   },
   "trustedDependencies": [

@@ -1,55 +1,65 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
-import { SettingsProvider } from './context/SettingsContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute';
 
-// Public & Customer Pages
+// Customer Pages
 import Home from './pages/Home';
 import Vehicles from './pages/Vehicles';
 import VehicleDetails from './pages/VehicleDetails';
 import BookingCheckout from './pages/BookingCheckout';
 import MyBookings from './pages/MyBookings';
+import Profile from './pages/Profile';
+
+// Auth Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Profile from './pages/Profile';
-import Support from './pages/Support';
-
-// Staff Pages
-import OperationsPanel from './pages/staff/OperationsPanel';
-import FleetManagement from './pages/staff/FleetManagement';
-import MaintenancePage from './pages/staff/MaintenancePage';
-import AlertsPage from './pages/staff/AlertsPage';
+import VerifyEmail from './pages/VerifyEmail';
 
 // Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import UserManagement from './pages/admin/UserManagement';
-import PricingRulesPage from './pages/admin/PricingRulesPage';
-import AuditLogsPage from './pages/admin/AuditLogsPage';
-import SystemSettingsPage from './pages/admin/SystemSettingsPage';
+import AdminPortal from './pages/admin/AdminPortal';
+
+// 404 Page
+function NotFound() {
+  return (
+    <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-4 space-y-4">
+      <div className="text-6xl font-black text-indigo-500 font-mono">404</div>
+      <h2 className="text-2xl font-bold text-white">Page Not Found</h2>
+      <p className="text-xs text-slate-400 max-w-sm">
+        The destination URL does not exist or has been relocated within our fleet network.
+      </p>
+      <Link
+        to="/"
+        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all"
+      >
+        Return to Home Fleet
+      </Link>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <Router>
       <AuthProvider>
         <NotificationProvider>
-          <SettingsProvider>
-            <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+          <div className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 selection:bg-indigo-500 selection:text-white">
             <Navbar />
             <main className="flex-1">
               <Routes>
-                {/* Public */}
+                {/* Public & Customer Routes */}
                 <Route path="/" element={<Home />} />
                 <Route path="/vehicles" element={<Vehicles />} />
                 <Route path="/vehicles/:id" element={<VehicleDetails />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Register />} />
                 <Route path="/register" element={<Register />} />
-                <Route path="/support" element={<Support />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
 
-                {/* Customer Authenticated */}
+                {/* Customer Authenticated Protected Routes */}
                 <Route
                   path="/checkout"
                   element={
@@ -75,91 +85,32 @@ export default function App() {
                   }
                 />
 
-                {/* Staff / Manager */}
+                {/* Admin Dashboard Protected Routes */}
                 <Route
-                  path="/staff/operations"
+                  path="/admin"
                   element={
-                    <ProtectedRoute allowedRoles={['STAFF', 'MANAGER', 'ADMIN']}>
-                      <OperationsPanel />
-                    </ProtectedRoute>
+                    <AdminRoute>
+                      <AdminPortal />
+                    </AdminRoute>
                   }
                 />
                 <Route
-                  path="/staff/fleet"
+                  path="/admin/*"
                   element={
-                    <ProtectedRoute allowedRoles={['STAFF', 'MANAGER', 'ADMIN']}>
-                      <FleetManagement />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/staff/maintenance"
-                  element={
-                    <ProtectedRoute allowedRoles={['STAFF', 'MANAGER', 'ADMIN']}>
-                      <MaintenancePage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/staff/alerts"
-                  element={
-                    <ProtectedRoute allowedRoles={['STAFF', 'MANAGER', 'ADMIN']}>
-                      <AlertsPage />
-                    </ProtectedRoute>
+                    <AdminRoute>
+                      <AdminPortal />
+                    </AdminRoute>
                   }
                 />
 
-                {/* Admin / Manager */}
-                <Route
-                  path="/admin/dashboard"
-                  element={
-                    <ProtectedRoute allowedRoles={['MANAGER', 'ADMIN']}>
-                      <AdminDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/users"
-                  element={
-                    <ProtectedRoute allowedRoles={['ADMIN']}>
-                      <UserManagement />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/pricing"
-                  element={
-                    <ProtectedRoute allowedRoles={['MANAGER', 'ADMIN']}>
-                      <PricingRulesPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/audit"
-                  element={
-                    <ProtectedRoute allowedRoles={['ADMIN']}>
-                      <AuditLogsPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/settings"
-                  element={
-                    <ProtectedRoute allowedRoles={['ADMIN']}>
-                      <SystemSettingsPage />
-                    </ProtectedRoute>
-                  }
-                />
-
-                {/* Catch-all redirect */}
-                <Route path="*" element={<Navigate to="/" replace />} />
+                {/* 404 Fallback */}
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </main>
             <Footer />
           </div>
-        </SettingsProvider>
-      </NotificationProvider>
-    </AuthProvider>
+        </NotificationProvider>
+      </AuthProvider>
     </Router>
   );
 }

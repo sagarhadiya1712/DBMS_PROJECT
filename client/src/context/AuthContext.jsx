@@ -5,97 +5,106 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('fleet_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('rental_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const verifyUser = async () => {
-      const token = localStorage.getItem('fleet_access_token');
+    const checkAuth = async () => {
+      const token = localStorage.getItem('rental_token');
       if (token) {
         try {
-          const res = await api.get('/auth/profile');
-          if (res.data.success) {
-            setUser(res.data.data);
-            localStorage.setItem('fleet_user', JSON.stringify(res.data.data));
+          const res = await api.get('/auth/me');
+          if (res.data?.user) {
+            setUser(res.data.user);
+            localStorage.setItem('rental_user', JSON.stringify(res.data.user));
           }
         } catch (e) {
-          // Handled by refresh interceptor or logged out
+          localStorage.removeItem('rental_token');
+          localStorage.removeItem('rental_user');
+          setUser(null);
         }
       }
       setLoading(false);
     };
 
-    verifyUser();
+    checkAuth();
   }, []);
 
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
-    if (res.data.success) {
-      const { user: userData, accessToken, refreshToken } = res.data.data;
-      localStorage.setItem('fleet_access_token', accessToken);
-      localStorage.setItem('fleet_refresh_token', refreshToken);
-      localStorage.setItem('fleet_user', JSON.stringify(userData));
-      setUser(userData);
-      return userData;
-    }
-    throw new Error(res.data.message || 'Login failed');
+    const { token, user: userData } = res.data;
+    localStorage.setItem('rental_token', token);
+    localStorage.setItem('rental_user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
   };
 
-  const register = async (payload) => {
-    const res = await api.post('/auth/register', payload);
-    if (res.data.success) {
-      const { user: userData, accessToken, refreshToken } = res.data.data;
-      localStorage.setItem('fleet_access_token', accessToken);
-      localStorage.setItem('fleet_refresh_token', refreshToken);
-      localStorage.setItem('fleet_user', JSON.stringify(userData));
-      setUser(userData);
-      return userData;
-    }
-    throw new Error(res.data.message || 'Registration failed');
+  const signup = async (payload) => {
+    const res = await api.post('/auth/signup', payload);
+    return res.data;
   };
 
-  const logout = async () => {
-    try {
-      await api.post('/auth/logout');
-    } catch (e) {
-      // ignore
-    } finally {
-      localStorage.removeItem('fleet_access_token');
-      localStorage.removeItem('fleet_refresh_token');
-      localStorage.removeItem('fleet_user');
-      setUser(null);
-    }
+  const verifyOtp = async (email, otp) => {
+    const res = await api.post('/auth/verify-otp', { email, otp });
+    const { token, user: userData } = res.data;
+    localStorage.setItem('rental_token', token);
+    localStorage.setItem('rental_user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  };
+
+  const resendOtp = async (email) => {
+    const res = await api.post('/auth/resend-otp', { email });
+    return res.data;
+  };
+
+  const googleLogin = async (payload) => {
+    const res = await api.post('/auth/google', payload);
+    const { token, user: userData } = res.data;
+    localStorage.setItem('rental_token', token);
+    localStorage.setItem('rental_user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('rental_token');
+    localStorage.removeItem('rental_user');
+    setUser(null);
   };
 
   const updateUser = (updated) => {
     setUser((prev) => {
       const merged = { ...prev, ...updated };
-      localStorage.setItem('fleet_user', JSON.stringify(merged));
+      localStorage.setItem('rental_user', JSON.stringify(merged));
       return merged;
     });
   };
 
-  const isAdmin = user?.role === 'ADMIN';
-  const isManager = user?.role === 'MANAGER';
-  const isStaff = user?.role === 'STAFF' || isManager || isAdmin;
-  const isCustomer = user?.role === 'CUSTOMER';
+  const isAdmin = user?.role === 'admin' || user?.role === 'ADMIN';
+  const isCustomer = !isAdmin;
 
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
-        login,
-        register,
-        logout,
-        updateUser,
         isAuthenticated: !!user,
         isAdmin,
-        isManager,
-        isStaff,
         isCustomer,
+        login,
+        signup,
+        verifyOtp,
+        resendOtp,
+        googleLogin,
+        logout,
+        updateUser,
       }}
     >
       {children}

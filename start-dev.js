@@ -5,7 +5,7 @@ console.log('🚀 Starting Vehicle Rental & Fleet Management System (Monorepo)..
 
 // 1. Start Backend Server
 const serverDir = path.join(__dirname, 'server');
-const serverProcess = spawn('node', ['src/server.js'], {
+const serverProcess = spawn('node', ['server.js'], {
   cwd: serverDir,
   shell: true,
   stdio: 'inherit',

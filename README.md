@@ -1,160 +1,143 @@
-# 🚗 Vehicle Rental & Fleet Management System (Monorepo)
+# 🚗 Vehicle Rental & Fleet Management System
 
-A production-ready, full-stack monorepo system designed to digitize the complete vehicle rental lifecycle: **Search → Real-time Booking → Razorpay Test Payment → Digital Pickup Check-Out → Return Check-In & Penalty Calculation → PDF Invoicing**.
+A production-ready full-stack monorepo system automating the complete vehicle rental lifecycle: **Search → Zero Double-Booking Reservation → Razorpay Test Payment → Check-Out → Return Check-In with Late Fees → PDF Tax Invoicing**.
 
-Built with guaranteed **zero double-bookings**, role-based access control (RBAC), automated compliance/service expiration alerts via `node-cron`, and executive analytics powered by Recharts.
+Built with a modern dark glassmorphic UI, role-based access control, automated fleet compliance alerts via `node-cron`, and executive analytics powered by Recharts and ExcelJS.
 
 ---
 
 ## 🏗️ Architecture & Technology Stack
 
-- **Frontend**: React 18, Vite, Tailwind CSS, React Router v7, Axios, Lucide Icons, Recharts
-- **Backend**: Node.js, Express, REST API
-- **Database**: PostgreSQL with Prisma ORM (includes dual-mode zero-dependency local SQLite fallback)
-- **Authentication**: JWT (Access Token 15m + Refresh Token 7d with bcrypt rotation), Role-Based Access Control (RBAC)
-- **Payment Gateway**: Razorpay in Sandbox/Test Mode with HMAC-SHA256 signature verification (modular provider ready for Stripe)
-- **File Uploads**: Multi-part upload handler (saving to local `/uploads` or Cloudinary)
-- **Automated Cron**: `node-cron` scanning daily for vehicle insurance, registration, and service deadlines
+- **Frontend**: React 18, Vite, Tailwind CSS, React Router v7, Axios, Recharts, Lucide Icons
+- **Backend**: Node.js, Express.js (REST API MVC architecture)
+- **Database**: SQLite using `better-sqlite3` (`/server/db/rental.db`, foreign keys enabled, indexes, WAL mode)
+- **Authentication**: JWT, bcrypt, Google OAuth, 6-digit email OTP verification via Nodemailer
+- **Payments**: Razorpay Sandbox/Test mode with HMAC-SHA256 signature verification & test fallback simulator
 - **Digital Invoicing**: PDFKit streaming itemized tax invoices
-- **Reporting**: Excel (`xlsx`) and PDF summary exports
-- **DevOps**: `docker-compose.yml` (PostgreSQL + Server + Client), `Dockerfile.server`, `Dockerfile.client`, `.env.example`
-- **Testing**: Jest + Supertest test suite
+- **Reporting**: ExcelJS multi-sheet workbooks (`.xlsx`) and PDF summary exports
+- **Automated Cron**: `node-cron` scanning daily for overdue bookings and vehicle compliance/service deadlines (15-day alerts)
 
 ---
 
-## 👥 Demo Login Credentials (1-Click Buttons Available on Login Page)
+## 👥 Demo Login Credentials (1-Click Buttons on Login Page)
 
 | Role | Email | Password | Access Clearance |
 | :--- | :--- | :--- | :--- |
-| **👑 Admin** | `admin@rentfleet.com` | `Password123!` | Full system command, KPI dashboards, users, pricing & audit trail |
-| **💼 Manager** | `manager@rentfleet.com` | `Password123!` | Fleet management, branch pricing rules, maintenance scheduling |
-| **🔧 Staff** | `staff@rentfleet.com` | `Password123!` | Front-desk operations, pickup/return condition inspections |
-| **🚗 Customer** | `john@example.com` | `Password123!` | Explore fleet, reserve vehicles, Razorpay payment, download invoices |
-| **🚗 Customer** | `sarah@example.com` | `Password123!` | Customer account with active on-road rental |
+| **👑 Admin** | `admin@rental.com` | `Admin@123` | Full control: Fleet CRUD, status, approvals, compliance alerts, exports |
+| **🚗 Customer** | `customer@rental.com` | `Customer@123` | Reserve vehicles, Razorpay test payment, PDF invoice, reviews |
 
-*Active Promo Codes: `WELCOME10` (10% off), `SUMMER20` (20% off), `FLEET50` (15% off).*
+*Active Promo Codes: `WELCOME10` (10% off), `FLEET20` (20% off).*
 
 ---
 
-## 🚀 Quickstart & Local Setup
+## 🚀 Quickstart & Local Setup (In 5 Steps)
 
-### 1. Prerequisites
-- Node.js (v18+)
-- Docker & Docker Compose (optional, for multi-container deployment)
-
-### 2. Environment Setup
-Copy the environment template:
+### Step 1: Clone & Navigate
 ```bash
-cp .env.example server/.env
+git clone https://github.com/sagarhadiya1712/DBMS_PROJECT.git
+cd DBMS_PROJECT
 ```
 
-### 3. Running with Docker Compose (PostgreSQL + App)
+### Step 2: Install Dependencies
 ```bash
-docker-compose up --build
-```
-- Client Web App: `http://localhost:3000`
-- REST API Server: `http://localhost:5000/api`
-
-### 4. Running Directly via Node.js
-
-#### Backend Setup
-```bash
+# In the server directory
 cd server
 npm install
-npx prisma db push --schema=prisma/schema.sqlite.prisma
-node prisma/seed.js
-npm run dev
-```
-Backend will start on `http://localhost:5000` (API: `http://localhost:5000/api`).
 
-#### Frontend Setup
-```bash
-cd client
+# In the client directory
+cd ../client
 npm install
+```
+
+### Step 3: Initialize & Seed SQLite Database
+Creates `/server/db/rental.db` with 11 tables and 14 realistic Indian fleet vehicles:
+```bash
+cd ../server
+npm run db:init
+npm run db:seed
+```
+
+### Step 4: Environment Configuration
+Copy environment templates in both folders:
+```bash
+cp server/.env.example server/.env
+cp client/.env.example client/.env
+```
+
+### Step 5: Start the Development Servers
+From the root directory or inside `server` & `client`:
+```bash
+# Terminal 1: Backend API (port 5000)
+cd server
+npm run dev
+
+# Terminal 2: Frontend Client (port 3000)
+cd client
 npm run dev
 ```
-Frontend will start on `http://localhost:3000` (or `http://localhost:3001` if 3000 is occupied).
+
+- **Client Web App**: `http://localhost:3000`
+- **Backend REST API**: `http://localhost:5000/api`
 
 ---
 
-## 🧪 Testing & Verification
+## 🔑 Checklist of Environment Variables (`.env`)
 
-### Running Automated Test Suite
-From the `/server` folder, execute Jest and Supertest:
+Configure these values in `/server/.env` for live production integrations (or leave defaults for local test mode):
+
+| Variable | Purpose | How to Obtain / Configure |
+| :--- | :--- | :--- |
+| `JWT_SECRET` | Secret key for signing auth tokens | Any secure 32+ character random string |
+| `GMAIL_USER` | Gmail address for OTP emails | Your Gmail account (e.g. `yourname@gmail.com`) |
+| `GMAIL_APP_PASSWORD` | 16-character Google App Password | Google Account → Security → 2-Step Verification → App Passwords |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID | Google Cloud Console → Credentials → OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 Secret | Google Cloud Console → Credentials → Client Secret |
+| `RAZORPAY_KEY_ID` | Razorpay Key ID (Test Mode) | Razorpay Dashboard → Settings → API Keys → Generate Test Key |
+| `RAZORPAY_KEY_SECRET` | Razorpay Key Secret | Razorpay Dashboard → Settings → API Keys |
+
+*(Note: When Gmail or Razorpay credentials are left blank, the system automatically uses console OTP display and the built-in sandbox simulator, allowing full testing out-of-the-box).*
+
+---
+
+## 🗄️ Database Schema & SQLite Viewer
+
+The database is powered by `better-sqlite3` located at `/server/db/rental.db`.
+To view and inspect tables directly in VS Code:
+1. Install the **SQLite Viewer** or **SQLite** extension in VS Code.
+2. Open `/server/db/rental.db` in VS Code to browse tables:
+   - `users`, `email_otps`, `vehicles`, `bookings`, `payments`, `maintenance`, `fuel_records`, `drivers`, `reviews`, `discounts`, `vehicle_documents`.
+
+---
+
+## 🧪 Automated Testing
+
+Execute the complete end-to-end integration test suite verifying double-booking prevention, OTP verification, payment, invoice generation, and fleet exports:
 ```bash
 cd server
 npm test
 ```
-**Test Coverage Includes:**
-- User registration, login, and JWT token refresh
-- RBAC protection (Customer 403 blocks on Admin endpoints, Admin 200 pass)
-- **Zero Double-Booking Guard**: Strict date overlap conflict rejection (`409 Conflict`)
-- Dynamic price quote calculation with promo vouchers
-- Razorpay test mode payment capture and signature verification
+All 15 test cases are documented in detail at [`TEST_CASES.md`](file:///d:/vehicle_rent/TEST_CASES.md).
 
 ---
 
-## 📑 API Endpoints Summary
+## 🌐 Deployment Guide (Vercel & Render)
 
-A complete Postman Collection is included at [`postman_collection.json`](file:///d:/vehicle-rental-system/postman_collection.json).
+### 1. Frontend Deployment (Vercel)
+- Root Directory: `client`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Environment Variables:
+  - `VITE_API_URL`: Your deployed backend URL (e.g. `https://your-backend.onrender.com/api`)
 
-### Authentication (`/api/auth`)
-- `POST /api/auth/register` - Create customer account
-- `POST /api/auth/login` - Authenticate & receive access/refresh tokens
-- `POST /api/auth/refresh` - Rotate access token
-- `GET /api/auth/profile` - Current user details
-- `PUT /api/auth/profile` - Update details
-- `POST /api/auth/upload-license` - Upload driver license photo
-- `POST /api/auth/logout` - Revoke refresh token
+### 2. Backend Deployment (Render)
+- Root Directory: `server`
+- Build Command: `npm install && npm run db:init && npm run db:seed`
+- Start Command: `node server.js`
+- Environment Variables: Fill the checklist above (`JWT_SECRET`, `PORT=5000`, etc.)
 
-### Fleet & Vehicles (`/api/vehicles`)
-- `GET /api/vehicles` - Search with filters (category, seats, branch, price, date availability)
-- `GET /api/vehicles/:id` - Full vehicle details, photos, and calendar availability
-- `POST /api/vehicles` - Add vehicle to fleet (Staff/Admin)
-- `PUT /api/vehicles/:id` - Update vehicle specs/status
-- `DELETE /api/vehicles/:id` - Soft-delete / retire vehicle
-
-### Bookings & Billing (`/api/bookings`)
-- `POST /api/bookings/quote` - Preview pricing breakdown
-- `POST /api/bookings` - Create reservation with overlap guard
-- `GET /api/bookings/my-bookings` - Customer reservations
-- `GET /api/bookings/all` - All reservations queue (Staff/Admin)
-- `POST /api/bookings/:id/cancel` - Cancel reservation
-
-### Payments (`/api/payments`)
-- `POST /api/payments/create-order` - Create Razorpay order
-- `POST /api/payments/verify` - Verify signature and confirm booking
-
-### Inspections & Check-In / Check-Out (`/api/inspections`)
-- `POST /api/inspections` - Record pickup release or return check-in with automated fuel and late fee calculations
-- `GET /api/inspections/booking/:id` - Inspection history
-
-### Invoices (`/api/invoices`)
-- `GET /api/invoices/:bookingId` - Stream high-resolution PDF tax invoice
-
-### Executive & Fleet Admin (`/api/admin`)
-- `GET /api/admin/dashboard` - KPIs, revenue trends, category pie data, top fleet
-- `GET /api/admin/reports` - Export Excel (`.xlsx`) and PDF reports
-- `GET /api/admin/users` - RBAC user registry
-- `PUT /api/admin/users/:id/role` - Elevate or modify user role
-- `GET /api/admin/audit-logs` - Searchable system audit trail
-
----
-
-## 🛡️ Database Models (16 Tables)
-1. `roles`
-2. `users`
-3. `branches`
-4. `vehicles`
-5. `vehicle_images`
-6. `vehicle_documents`
-7. `pricing_rules`
-8. `promo_codes`
-9. `bookings`
-10. `payments`
-11. `checkin_checkout`
-12. `maintenance_records`
-13. `reviews`
-14. `notifications`
-15. `support_tickets`
-16. `audit_logs`
+> [!IMPORTANT]
+> **SQLite File Persistence Note on Render**:  
+> Render's free tier uses an ephemeral filesystem where files created at runtime are reset on server restarts.  
+> **Solutions**:
+> 1. Attach a Render **Persistent Disk** mounted at `/server/db`.
+> 2. Alternatively, connect to **Turso** (`@libsql/client`), which is a serverless hosted SQLite database with a generous free tier that keeps SQLite's speed with persistent cloud storage.
