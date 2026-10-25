@@ -127,10 +127,19 @@ if (require.main === module && process.env.NODE_ENV !== 'test') {
     console.log(`🚀 Fleet Rental API Server listening on port ${PORT}`);
     console.log(`📡 Base URL: http://localhost:${PORT}/api`);
     console.log(`🚗 Database: ${path.join(__dirname, 'db', 'rental.db')}`);
-    console.log(`======================================================\n`);
-
     // Initialize scheduled cron jobs
     initCronJobs();
+
+    // Auto-sync with Oracle Free Database (DBMS_PROJ) if configured
+    try {
+      const { initOracleSchema, syncSqliteToOracle } = require('./db/oracle');
+      const sqliteDb = require('./db/db');
+      initOracleSchema()
+        .then(() => syncSqliteToOracle(sqliteDb))
+        .catch((err) => console.warn('⚠️ [Oracle Startup Notice]:', err.message));
+    } catch (e) {
+      // Continue seamlessly if oracledb is not loaded
+    }
   });
 }
 

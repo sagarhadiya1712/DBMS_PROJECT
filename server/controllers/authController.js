@@ -3,6 +3,7 @@ const { z } = require('zod');
 const db = require('../db/db');
 const { signToken } = require('../utils/jwt');
 const { generateOTP, hashOTP, compareOTP, sendOTPEmail } = require('../utils/otp');
+const { syncUserToOracle } = require('../db/oracle');
 
 // Validation Schemas
 const signupSchema = z.object({
@@ -62,6 +63,12 @@ async function signup(req, res, next) {
       `).run(data.name.trim(), phone, email, passwordHash);
       userId = insertResult.lastInsertRowid;
     }
+
+    // Live sync user to Oracle Database
+    try {
+      const uRecord = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+      syncUserToOracle(uRecord).catch(() => {});
+    } catch (e) {}
 
     // Invalidate previous unused OTPs for this email
     db.prepare('UPDATE email_otps SET used = 1 WHERE email = ? AND used = 0').run(email);
@@ -286,6 +293,7 @@ async function verifyOtp(req, res, next) {
     });
 
     const user = verifyTransaction();
+    try { syncUserToOracle(user).catch(() => {}); } catch (e) {}
     const token = signToken({ user_id: user.user_id, role: user.role });
 
     res.json({
@@ -433,6 +441,8 @@ async function googleAuth(req, res, next) {
       user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(user.user_id);
     }
 
+    try { syncUserToOracle(user).catch(() => {}); } catch (e) {}
+
     // Flag if phone number needs completion
     const needsPhone = !user.phone || user.phone.trim() === '';
 
@@ -475,6 +485,8 @@ function completeProfile(req, res, next) {
       SELECT user_id, name, phone, email, role, is_verified, is_blocked, google_id, created_at
       FROM users WHERE user_id = ?
     `).get(userId);
+
+    try { syncUserToOracle(updatedUser).catch(() => {}); } catch (e) {}
 
     res.json({
       message: 'Profile completed successfully!',
